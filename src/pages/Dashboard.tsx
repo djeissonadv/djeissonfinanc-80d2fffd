@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { useFontesReceita } from '@/hooks/useFontesReceita';
 import { useFaturaAcumulada } from '@/hooks/useFaturaAcumulada';
+import { fetchAllRows } from '@/lib/supabase-fetch';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -52,24 +53,24 @@ export default function DashboardPage() {
     queryFn: async () => {
       // Fetch transactions by mes_competencia (credit card billing period) AND by data range
       // (for debit/cash transactions that don't have mes_competencia).
-      const { data: byCompetencia } = await supabase
+      const byCompetencia = await fetchAllRows(() => supabase
         .from('transacoes')
         .select('*')
         .eq('user_id', user!.id)
         .eq('ignorar_dashboard', false)
-        .eq('mes_competencia', billingMonth);
+        .eq('mes_competencia', billingMonth));
 
-      const { data: byDate } = await supabase
+      const byDate = await fetchAllRows(() => supabase
         .from('transacoes')
         .select('*')
         .eq('user_id', user!.id)
         .eq('ignorar_dashboard', false)
         .is('mes_competencia', null)
         .gte('data', start)
-        .lte('data', end);
+        .lte('data', end));
 
       // Merge and deduplicate by id
-      const all = [...(byCompetencia || []), ...(byDate || [])];
+      const all = [...byCompetencia, ...byDate];
       const seen = new Set<string>();
       return all.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
     },
@@ -97,16 +98,16 @@ export default function DashboardPage() {
       // Use mes_competencia (billing period) when available, falling back to data (purchase date).
       // For credit card transactions, mes_competencia is the correct field — data is the original
       // purchase date which can be months/years before the billing period.
-      const { data: withCompetencia } = await supabase
+      const withCompetencia = await fetchAllRows(() => supabase
         .from('transacoes')
         .select('*')
         .eq('user_id', user!.id)
         .eq('ignorar_dashboard', false)
         .not('parcela_total', 'is', null)
         .gte('mes_competencia', `${year}-01`)
-        .lte('mes_competencia', `${year}-12`);
+        .lte('mes_competencia', `${year}-12`));
 
-      const { data: withoutCompetencia } = await supabase
+      const withoutCompetencia = await fetchAllRows(() => supabase
         .from('transacoes')
         .select('*')
         .eq('user_id', user!.id)
@@ -114,9 +115,9 @@ export default function DashboardPage() {
         .not('parcela_total', 'is', null)
         .is('mes_competencia', null)
         .gte('data', `${year}-01-01`)
-        .lte('data', `${year}-12-31`);
+        .lte('data', `${year}-12-31`));
 
-      return [...(withCompetencia || []), ...(withoutCompetencia || [])];
+      return [...withCompetencia, ...withoutCompetencia];
     },
     enabled: !!user,
   });
@@ -137,11 +138,9 @@ export default function DashboardPage() {
         // Include ALL transactions up to today for accurate balance (fatura payments
         // are internal transfers but still affect bank balance). Future-dated
         // transactions (projected income, scheduled installments) are excluded.
-        const { data: txs } = await supabase.from('transacoes').select('valor, tipo').eq('conta_id', conta.id).eq('user_id', user!.id).lte('data', todayIso);
-        if (txs) {
-          for (const t of txs) {
-            total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
-          }
+        const txs = await fetchAllRows<{ valor: number; tipo: string }>(() => supabase.from('transacoes').select('valor, tipo').eq('conta_id', conta.id).eq('user_id', user!.id).lte('data', todayIso));
+        for (const t of txs) {
+          total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
         }
       }
       return total;
@@ -163,16 +162,14 @@ export default function DashboardPage() {
         return s;
       }, 0);
       for (const conta of debitAccounts) {
-        const { data: txs } = await supabase
+        const txs = await fetchAllRows<{ valor: number; tipo: string }>(() => supabase
           .from('transacoes')
           .select('valor, tipo')
           .eq('conta_id', conta.id)
           .eq('user_id', user!.id)
-          .lt('data', start);
-        if (txs) {
-          for (const t of txs) {
-            total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
-          }
+          .lt('data', start));
+        for (const t of txs) {
+          total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
         }
       }
       return total;

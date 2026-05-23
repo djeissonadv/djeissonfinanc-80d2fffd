@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { MonthSelector } from '@/components/MonthSelector';
 import { formatCurrency, getMonthName } from '@/lib/format';
+import { fetchAllRows } from '@/lib/supabase-fetch';
 import { useToast } from '@/hooks/use-toast';
 import {
   Target, TrendingUp, TrendingDown, Minus, Save, Lightbulb,
@@ -59,13 +60,11 @@ export default function PlanejamentoPage() {
       const debito = contas.filter(c => c.tipo === 'debito');
       let total = debito.reduce((s: number, c: any) => s + (c.saldo_inicial || 0), 0);
       for (const conta of debito) {
-        const { data: txs } = await supabase
+        const txs = await fetchAllRows<{ valor: number; tipo: string }>(() => supabase
           .from('transacoes').select('valor, tipo')
           .eq('conta_id', conta.id).eq('user_id', user!.id)
-          .lte('data', todayStr);           // ← só até hoje, ignora futuras; sem filtro ignorar_dashboard (pagamentos de fatura são saídas reais)
-        if (txs) {
-          for (const t of txs) total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
-        }
+          .lte('data', todayStr));          // ← só até hoje, ignora futuras; sem filtro ignorar_dashboard (pagamentos de fatura são saídas reais)
+        for (const t of txs) total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
       }
       return total;
     },
@@ -77,15 +76,15 @@ export default function PlanejamentoPage() {
     queryKey: ['planejamento-txmes', user?.id, billingMonth],
     queryFn: async () => {
       const [byComp, byDate] = await Promise.all([
-        supabase.from('transacoes').select('valor, tipo, categoria, descricao, data')
+        fetchAllRows(() => supabase.from('transacoes').select('valor, tipo, categoria, descricao, data')
           .eq('user_id', user!.id).eq('ignorar_dashboard', false)
-          .eq('mes_competencia', billingMonth),
-        supabase.from('transacoes').select('valor, tipo, categoria, descricao, data')
+          .eq('mes_competencia', billingMonth)),
+        fetchAllRows(() => supabase.from('transacoes').select('valor, tipo, categoria, descricao, data')
           .eq('user_id', user!.id).eq('ignorar_dashboard', false)
           .is('mes_competencia', null)
-          .gte('data', startDate).lte('data', endDate),
+          .gte('data', startDate).lte('data', endDate)),
       ]);
-      const all = [...(byComp.data || []), ...(byDate.data || [])];
+      const all = [...byComp, ...byDate];
       // deduplicate by id is not needed here since we're selecting different sets
       return all;
     },
@@ -145,15 +144,15 @@ export default function PlanejamentoPage() {
     queryKey: ['planejamento-ano', user?.id, year],
     queryFn: async () => {
       const [byComp, byDate] = await Promise.all([
-        supabase.from('transacoes').select('categoria, valor, mes_competencia, data')
+        fetchAllRows(() => supabase.from('transacoes').select('categoria, valor, mes_competencia, data')
           .eq('user_id', user!.id).eq('ignorar_dashboard', false).eq('tipo', 'despesa')
-          .gte('mes_competencia', `${year}-01`).lte('mes_competencia', `${year}-12`),
-        supabase.from('transacoes').select('categoria, valor, mes_competencia, data')
+          .gte('mes_competencia', `${year}-01`).lte('mes_competencia', `${year}-12`)),
+        fetchAllRows(() => supabase.from('transacoes').select('categoria, valor, mes_competencia, data')
           .eq('user_id', user!.id).eq('ignorar_dashboard', false).eq('tipo', 'despesa')
           .is('mes_competencia', null)
-          .gte('data', `${year}-01-01`).lte('data', `${year}-12-31`),
+          .gte('data', `${year}-01-01`).lte('data', `${year}-12-31`)),
       ]);
-      return [...(byComp.data || []), ...(byDate.data || [])];
+      return [...byComp, ...byDate];
     },
     enabled: !!user,
   });

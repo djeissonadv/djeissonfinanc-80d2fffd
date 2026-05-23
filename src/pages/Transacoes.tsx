@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency, formatDate, getMonthRange } from '@/lib/format';
+import { fetchAllRows } from '@/lib/supabase-fetch';
 import { CATEGORIAS, CATEGORIAS_DESPESA, CATEGORIAS_RECEITA, CATEGORIAS_CONFIG, getCategoriaColor, getSubcategorias } from '@/types/database.types';
 import { useCategorias } from '@/hooks/useCategorias';
 import { CategoriaSelector } from '@/components/CategoriaSelector';
@@ -84,24 +85,24 @@ export default function TransacoesPage() {
       // Credit card transactions are identified by mes_competencia (billing period).
       // Debit/cash transactions have mes_competencia = null and are filtered by data.
       // This mirrors the Dashboard logic so category totals are consistent.
-      const { data: byCompetencia } = await supabase
+      const byCompetencia = await fetchAllRows(() => supabase
         .from('transacoes')
         .select('*')
         .eq('user_id', user!.id)
         .eq('mes_competencia', billingMonth)
-        .order('data', { ascending: false });
+        .order('data', { ascending: false }));
 
-      const { data: byDate } = await supabase
+      const byDate = await fetchAllRows(() => supabase
         .from('transacoes')
         .select('*')
         .eq('user_id', user!.id)
         .is('mes_competencia', null)
         .gte('data', start)
         .lte('data', end)
-        .order('data', { ascending: false });
+        .order('data', { ascending: false }));
 
       // Merge and deduplicate by id
-      const all = [...(byCompetencia || []), ...(byDate || [])];
+      const all = [...byCompetencia, ...byDate];
       const seen = new Set<string>();
       return all.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
     },

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toLocalIso } from '@/lib/format';
 
 /**
  * Returns today's date as an ISO string (YYYY-MM-DD), auto-updating when the
@@ -15,7 +16,7 @@ import { useEffect, useState } from 'react';
  * returns.
  */
 export function useTodayIso(): string {
-  const [today, setToday] = useState(() => new Date().toISOString().substring(0, 10));
+  const [today, setToday] = useState(() => toLocalIso(new Date()));
 
   useEffect(() => {
     let timeoutId: number | undefined;
@@ -26,13 +27,13 @@ export function useTodayIso(): string {
       nextMidnight.setHours(24, 0, 5, 0); // 5s after midnight to dodge clock skew
       const ms = nextMidnight.getTime() - now.getTime();
       timeoutId = window.setTimeout(() => {
-        setToday(new Date().toISOString().substring(0, 10));
+        setToday(toLocalIso(new Date()));
         scheduleNextMidnight();
       }, ms);
     };
 
     const refresh = () => {
-      const current = new Date().toISOString().substring(0, 10);
+      const current = toLocalIso(new Date());
       setToday(prev => (prev === current ? prev : current));
     };
 

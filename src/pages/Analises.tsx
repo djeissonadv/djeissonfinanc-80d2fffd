@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useTodayIso } from '@/hooks/useTodayIso';
+import { fetchAllRows } from '@/lib/supabase-fetch';
 import { useFontesReceita } from '@/hooks/useFontesReceita';
 import { MonthSelector } from '@/components/MonthSelector';
 import { SmartInsightsCard } from '@/components/dashboard/SmartInsightsCard';
@@ -25,6 +27,7 @@ export default function AnalisesPage() {
   const [year, setYear] = useState(now.getFullYear());
   const { start, end } = getMonthRange(month, year);
   const billingMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
+  const todayIso = useTodayIso();
 
   const { receitaBase } = useFontesReceita();
 
@@ -47,23 +50,23 @@ export default function AnalisesPage() {
   const { data: transacoesMes } = useQuery({
     queryKey: ['analises', 'transacoes-mes', user?.id, start, end, billingMonth],
     queryFn: async () => {
-      const { data: byCompetencia } = await supabase
+      const byCompetencia = await fetchAllRows(() => supabase
         .from('transacoes')
         .select('*')
         .eq('user_id', user!.id)
         .eq('ignorar_dashboard', false)
-        .eq('mes_competencia', billingMonth);
+        .eq('mes_competencia', billingMonth));
 
-      const { data: byDate } = await supabase
+      const byDate = await fetchAllRows(() => supabase
         .from('transacoes')
         .select('*')
         .eq('user_id', user!.id)
         .eq('ignorar_dashboard', false)
         .is('mes_competencia', null)
         .gte('data', start)
-        .lte('data', end);
+        .lte('data', end));
 
-      const all = [...(byCompetencia || []), ...(byDate || [])];
+      const all = [...byCompetencia, ...byDate];
       const seen = new Set<string>();
       return all.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
     },
@@ -77,30 +80,53 @@ export default function AnalisesPage() {
       const oneYearAgo = new Date();
       oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
       const startDate = `${oneYearAgo.getFullYear()}-${String(oneYearAgo.getMonth() + 1).padStart(2, '0')}-01`;
-      const { data } = await supabase
+      const data = await fetchAllRows<TransactionRecord>(() => supabase
         .from('transacoes')
         .select('data, mes_competencia, descricao, valor, tipo, categoria, categoria_id, parcela_atual, parcela_total, grupo_parcela, ignorar_dashboard, essencial, conta_id')
         .eq('user_id', user!.id)
-        .gte('data', startDate);
-      return (data || []) as TransactionRecord[];
+        .gte('data', startDate));
+      return data;
     },
     enabled: !!user,
   });
 
-  // Saldo atual
+  // Saldo atual — mirrors Dashboard: all debit-account transactions up to today
+  // (future-dated entries excluded), including ignorar_dashboard ones (fatura
+  // payments are internal transfers but still move the bank balance).
   const { data: saldoAtual } = useQuery({
-    queryKey: ['analises', 'saldo-total', user?.id],
+    queryKey: ['analises', 'saldo-total', user?.id, todayIso],
     queryFn: async () => {
       const { data: contasList } = await supabase.from('contas').select('id, saldo_inicial, tipo').eq('user_id', user!.id);
       if (!contasList?.length) return 0;
       const debitAccounts = contasList.filter(c => c.tipo === 'debito');
       let total = debitAccounts.reduce((s, c) => s + (c.saldo_inicial || 0), 0);
       for (const conta of debitAccounts) {
-        const { data: txs } = await supabase.from('transacoes').select('valor, tipo').eq('conta_id', conta.id).eq('user_id', user!.id).eq('ignorar_dashboard', false);
-        if (txs) {
-          for (const t of txs) {
-            total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
-          }
+        const txs = await fetchAllRows<{ valor: number; tipo: string }>(() => supabase.from('transacoes').select('valor, tipo').eq('conta_id', conta.id).eq('user_id', user!.id).lte('data', todayIso));
+        for (const t of txs) {
+          total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
+        }
+      }
+      return total;
+    },
+    enabled: !!user,
+  });
+
+  // Saldo anterior — balance across debit accounts strictly before the selected
+  // month's start. Same logic as Dashboard so the two pages agree.
+  const { data: saldoAnterior } = useQuery({
+    queryKey: ['analises', 'saldo-anterior', user?.id, start],
+    queryFn: async () => {
+      const { data: contasList } = await supabase.from('contas').select('id, saldo_inicial, tipo, data_abertura').eq('user_id', user!.id);
+      if (!contasList?.length) return 0;
+      const debitAccounts = contasList.filter(c => c.tipo === 'debito');
+      let total = debitAccounts.reduce((s, c) => {
+        if (!c.data_abertura || c.data_abertura < start) return s + (c.saldo_inicial || 0);
+        return s;
+      }, 0);
+      for (const conta of debitAccounts) {
+        const txs = await fetchAllRows<{ valor: number; tipo: string }>(() => supabase.from('transacoes').select('valor, tipo').eq('conta_id', conta.id).eq('user_id', user!.id).lt('data', start));
+        for (const t of txs) {
+          total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
         }
       }
       return total;
@@ -126,8 +152,10 @@ export default function AnalisesPage() {
   const totalEssencial = transacoesMes?.filter(t => t.tipo === 'despesa' && t.essencial).reduce((s, t) => s + Number(t.valor), 0) || 0;
   const totalNaoEssencial = totalDespesas - totalEssencial;
   const pctEssencial = totalDespesas > 0 ? (totalEssencial / totalDespesas) * 100 : 0;
-  const saldoAnterior = (saldoAtual || 0) - totalReceitas + totalDespesas;
-  const disponivel = saldoAnterior + totalReceitas - totalDespesas;
+  // Disponível no mês = saldo anterior + receitas do mês - despesas do mês.
+  // (Mesma definição do Dashboard, sem o componente de contas a pagar/receber,
+  // que não é carregado nesta página de análise.)
+  const disponivel = (saldoAnterior || 0) + totalReceitas - totalDespesas;
 
   const categoryRanking = Object.entries(
     transacoesMes

@@ -196,7 +196,10 @@ export function calculateRevenueAverage(transactions: TransactionRecord[]): numb
   
   const months: Record<string, number> = {};
   for (const t of receitas) {
-    const month = t.data.substring(0, 7);
+    // Use mes_competencia when available so revenue lands in the same period
+    // as expenses (which also key off competência). Keying revenue off the raw
+    // purchase/credit date would misalign the two and distort saldoMes.
+    const month = t.mes_competencia || t.data.substring(0, 7);
     if (!months[month]) months[month] = 0;
     months[month] += t.valor;
   }
