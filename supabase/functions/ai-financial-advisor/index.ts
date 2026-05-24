@@ -127,6 +127,30 @@ Cenário 3 (Carro Quita Sozinho): Saldo com carro R$ ${c.cenario3.saldoComCarro}
         break;
       }
 
+      case "debt_strategy": {
+        systemPrompt = `Você é um consultor financeiro brasileiro especialista em quitação de dívidas, direto e técnico. Monte um plano de saída com base SÓ nos números fornecidos.
+
+Regras de resposta (OBRIGATÓRIAS):
+- Use método avalanche (atacar o maior juro primeiro) salvo se uma dívida pequena puder ser quitada em 1-2 meses (aí cite o ganho psicológico de eliminá-la).
+- Estrutura em Markdown, máximo ~200 palavras:
+  1. **Ordem de ataque**: liste em que ordem quitar, citando o porquê com número (taxa % ou saldo R$).
+  2. **A maior sangria**: aponte qual dívida custa mais em juros e o quanto se evita quitando antes.
+  3. **Efeito bola de neve**: o que fazer com o valor que sobra quando cada dívida acaba.
+  4. **1 ação concreta neste mês**: específica e numérica.
+- Dívidas com taxa "null" têm juro desconhecido — diga pra ele cadastrar/descobrir a taxa, não invente.
+- NADA de conselho genérico ("gaste menos", "faça reserva") sem número. Português do Brasil.`;
+        const d = context;
+        userPrompt = `Situação de dívidas:
+- Total restante: R$ ${d.totalRestante?.toFixed(0)}
+- Compromisso mensal: R$ ${d.totalMensal?.toFixed(0)}${d.comprometimentoRenda != null ? ` (${d.comprometimentoRenda.toFixed(0)}% da renda de R$ ${d.rendaMensal?.toFixed(0)})` : ''}
+- Livre de dívidas em: ${d.mesLiberdade} (${d.mesesAteLiberdade} meses no ritmo atual)
+- Juros evitáveis quitando à vista (onde a taxa é conhecida): R$ ${d.jurosEvitaveis?.toFixed(0)}
+
+Dívidas (ordenadas por prioridade sugerida):
+${d.dividas?.map((x: any) => `- ${x.nome}: R$ ${x.valorMensal?.toFixed(0)}/mês, ${x.parcelasRestantes}x restantes, R$ ${x.valorRestante?.toFixed(0)} no total, taxa ${x.taxaAno != null ? x.taxaAno + '% a.a.' : 'desconhecida'}`).join('\n')}`;
+        break;
+      }
+
       default:
         return new Response(JSON.stringify({ error: "Tipo de análise inválido" }), {
           status: 400,

@@ -3,6 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency, getMonthName } from '@/lib/format';
+import { useFontesReceita } from '@/hooks/useFontesReceita';
+import { buildDebtPlan, jurosEvitadosQuitando, type DebtItem } from '@/lib/debt-strategy';
+import { DebtStrategyCard } from '@/components/dividas/DebtStrategyCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +29,9 @@ import {
   CreditCard,
   ShoppingBag,
   Building2,
+  Target,
+  Flame,
+  Snowflake,
 } from 'lucide-react';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -342,6 +348,34 @@ export default function DividasPage() {
     return loanChartData.reduce((peak, row) => (Number(row['_total']) > Number(peak['_total']) ? row : peak));
   }, [loanChartData]);
 
+  // ── 8. Plano de saída das dívidas (estratégia)
+  const { receitaBase } = useFontesReceita();
+  const debtItems = useMemo((): DebtItem[] => [
+    ...loanContracts.map(c => ({
+      id: c.contratoKey,
+      nome: c.meta.nome,
+      valorMensal: c.valorMensal,
+      parcelasRestantes: c.parcelasRestantes,
+      valorRestante: c.totalRestante,
+      mesFim: c.dataFim,
+      taxaAno: c.meta.taxaAno,
+      tipo: 'emprestimo' as const,
+    })),
+    ...debtGroups.map(d => ({
+      id: d.key,
+      nome: d.displayName,
+      valorMensal: d.valorMensal,
+      parcelasRestantes: d.parcelasRestantes,
+      valorRestante: d.valorRestante,
+      mesFim: d.mesTermino,
+      taxaAno: undefined,
+      tipo: d.isFatura ? ('fatura' as const) : ('compra' as const),
+    })),
+  ], [loanContracts, debtGroups]);
+
+  const debtPlan = useMemo(() => buildDebtPlan(debtItems, receitaBase, currentYYYYMM), [debtItems, receitaBase, currentYYYYMM]);
+  const mesLiberdadeLabel = debtPlan.mesLiberdade ? fmtMesFull(debtPlan.mesLiberdade) : '—';
+
   if (isLoading) {
     return (
       <div className="space-y-6 animate-fade-in">
@@ -360,7 +394,9 @@ export default function DividasPage() {
       <div>
         <h1 className="text-2xl font-bold">Dívidas & Empréstimos</h1>
         <p className="text-sm text-muted-foreground">
-          Visão completa do compromisso financeiro até Jan/2029
+          {debtPlan.mesLiberdade
+            ? `Visão completa do compromisso financeiro até ${mesLiberdadeLabel}`
+            : 'Visão completa do seu compromisso financeiro'}
         </p>
       </div>
 
@@ -436,10 +472,105 @@ export default function DividasPage() {
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <p className="text-xl font-bold">{mesesAteFim} <span className="text-sm font-normal text-muted-foreground">meses</span></p>
-            <p className="text-xs text-muted-foreground mt-0.5">até Jan/2029</p>
+            <p className="text-xs text-muted-foreground mt-0.5">até {mesLiberdadeLabel}</p>
           </CardContent>
         </Card>
       </div>
+
+      {/* ── PLANO DE SAÍDA ── */}
+      {debtItems.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Target className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">Plano de saída das dívidas</h2>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            {/* Prioridade de ataque (avalanche) */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Flame className="h-4 w-4 text-destructive" /> Ordem de ataque
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <p className="text-xs text-muted-foreground -mt-1">
+                  Ataque primeiro a dívida mais cara (mais juros), mantendo o mínimo das outras.
+                </p>
+                {debtPlan.ordemAtaque.slice(0, 4).map((a, i) => (
+                  <div key={a.item.id} className="flex items-start gap-2 text-sm">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{i + 1}</span>
+                    <div className="min-w-0">
+                      <p className="font-medium leading-tight truncate">{a.item.nome}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {a.motivo} · {formatCurrency(a.item.valorRestante)} restante
+                        {a.jurosEvitaveis > 0 && ` · quitar à vista evita ~${formatCurrency(a.jurosEvitaveis)}`}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            {/* Liberdade + bola de neve */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Snowflake className="h-4 w-4 text-cyan-500" /> Efeito bola de neve
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="bg-muted/50 rounded-lg p-2.5 space-y-0.5 text-sm">
+                  {debtPlan.comprometimentoRenda !== null && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Dívidas vs. renda</span>
+                      <span className={`font-medium ${debtPlan.comprometimentoRenda > 40 ? 'text-destructive' : debtPlan.comprometimentoRenda > 30 ? 'text-amber-600' : 'text-green-600'}`}>
+                        {debtPlan.comprometimentoRenda.toFixed(0)}% ({formatCurrency(debtPlan.totalMensal)}/mês)
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Livre de dívidas em</span>
+                    <span className="font-medium">{mesLiberdadeLabel} ({debtPlan.mesesAteLiberdade}m)</span>
+                  </div>
+                  {debtPlan.jurosEvitaveis > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Juros evitáveis (quitação à vista)</span>
+                      <span className="font-medium text-green-600">{formatCurrency(debtPlan.jurosEvitaveis)}</span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">Conforme cada dívida acaba, jogue o valor liberado na próxima:</p>
+                {debtPlan.liberacoes.slice(0, 3).map((l, i) => (
+                  <div key={`${l.nome}-${i}`} className="flex items-center justify-between text-sm">
+                    <span className="truncate text-muted-foreground">{fmtMesFull(l.mes)} · {l.nome} acaba</span>
+                    <span className="font-medium text-green-600 shrink-0 ml-2">+{formatCurrency(l.valorLiberado)}/mês</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+
+          <DebtStrategyCard
+            context={{
+              rendaMensal: receitaBase,
+              totalRestante: debtPlan.totalRestante,
+              totalMensal: debtPlan.totalMensal,
+              comprometimentoRenda: debtPlan.comprometimentoRenda,
+              mesLiberdade: mesLiberdadeLabel,
+              mesesAteLiberdade: debtPlan.mesesAteLiberdade,
+              jurosEvitaveis: debtPlan.jurosEvitaveis,
+              dividas: debtPlan.ordemAtaque.map(a => ({
+                nome: a.item.nome,
+                valorMensal: a.item.valorMensal,
+                parcelasRestantes: a.item.parcelasRestantes,
+                valorRestante: a.item.valorRestante,
+                taxaAno: a.item.taxaAno ?? null,
+              })),
+            }}
+          />
+        </div>
+      )}
 
       {/* ── GRÁFICO DE BARRAS EMPILHADAS ── */}
       {loanChartData.length > 0 && (
@@ -567,7 +698,7 @@ export default function DividasPage() {
                     {/* Savings hint for MP */}
                     {isMP && (
                       <div className="rounded-md bg-amber-50 dark:bg-amber-950/20 p-2 text-xs text-amber-700 dark:text-amber-400">
-                        Quitar hoje economiza ~<strong>{formatCurrency(c.totalRestante * 0.35)}</strong> em juros projetados
+                        Quitar hoje economiza ~<strong>{formatCurrency(jurosEvitadosQuitando(c.valorMensal, c.parcelasRestantes, c.meta.taxaAno))}</strong> em juros ({c.meta.taxaAno}% a.a. sobre {c.parcelasRestantes}x)
                       </div>
                     )}
                   </CardContent>
