@@ -9,7 +9,26 @@ export interface OFXParseResult {
   periodEnd: string | null;
   ledgerBalance: number | null;
   balanceDate: string | null;
+  /** Saldo anterior ao primeiro lançamento do extrato (derivado do saldo de fechamento). */
+  openingBalance: number | null;
+  openingDate: string | null;
   transactions: ClassifiedTransaction[];
+}
+
+/**
+ * Saldo anterior = saldo de fechamento (LEDGERBAL) menos o efeito líquido de todos
+ * os lançamentos do arquivo. Permite reconciliar o saldo da conta sem o usuário
+ * digitar o saldo inicial à mão. Retorna null se não houver saldo de fechamento.
+ */
+export function computeOpeningBalance(
+  ledgerBalance: number | null,
+  transactions: { data: string; valor: number; tipo: string }[],
+): { openingBalance: number; openingDate: string } | null {
+  if (ledgerBalance == null || transactions.length === 0) return null;
+  const net = transactions.reduce((s, t) => s + (t.tipo === 'receita' ? t.valor : -t.valor), 0);
+  const openingBalance = Math.round((ledgerBalance - net) * 100) / 100;
+  const openingDate = transactions.reduce((min, t) => (t.data < min ? t.data : min), transactions[0].data);
+  return { openingBalance, openingDate };
 }
 
 function parseOFXDate(dateStr: string): string {
@@ -166,6 +185,8 @@ export function parseOFX(ofxText: string, defaultPessoa: string = 'Titular'): OF
     })
     .filter(Boolean) as ClassifiedTransaction[];
 
+  const opening = accountType === 'credito' ? null : computeOpeningBalance(ledgerBalance, transactions);
+
   return {
     contaDetectada,
     accountType,
@@ -174,6 +195,8 @@ export function parseOFX(ofxText: string, defaultPessoa: string = 'Titular'): OF
     periodEnd,
     ledgerBalance,
     balanceDate,
+    openingBalance: opening?.openingBalance ?? null,
+    openingDate: opening?.openingDate ?? null,
     transactions,
   };
 }

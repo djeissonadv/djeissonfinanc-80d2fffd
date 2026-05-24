@@ -113,6 +113,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
   const [parsedSkippedLines, setParsedSkippedLines] = useState<SkippedLine[]>([]);
   const [parsedTotalLines, setParsedTotalLines] = useState(0);
   const [parsedLineLogs, setParsedLineLogs] = useState<CsvLineLogEntry[]>([]);
+  const [parsedOpening, setParsedOpening] = useState<{ balance: number; date: string } | null>(null);
   const [forceImporting, setForceImporting] = useState(false);
   const [preparedPlan, setPreparedPlan] = useState<PreparedImportPlan | null>(null);
   const [pendingConflicts, setPendingConflicts] = useState<ConflictMatch[] | null>(null);
@@ -180,6 +181,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     let skippedLines: SkippedLine[] = [];
     let totalLines = 0;
     let lineLogs: CsvLineLogEntry[] = [];
+    let openingDetected: { balance: number; date: string } | null = null;
 
     if (ext === "pdf") {
       try {
@@ -221,6 +223,9 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       contaDetectada = parsed.contaDetectada;
       accountType = parsed.accountType;
       transactions = parsed.transactions;
+      openingDetected = parsed.openingBalance != null && parsed.openingDate
+        ? { balance: parsed.openingBalance, date: parsed.openingDate }
+        : null;
 
       // Try matching by account number
       if (parsed.accountNumber && contasList) {
@@ -275,6 +280,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     setParsedSkippedLines(skippedLines);
     setParsedTotalLines(totalLines);
     setParsedLineLogs(lineLogs);
+    setParsedOpening(openingDetected);
 
     // For non-CSV file types, set default due date
     if (ext !== 'csv') {
@@ -860,6 +866,33 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
         await cleanOrphanProjections(context.contaId, context.currentUserId, parsedTransactions, targetMonth);
       }
 
+      // Step 0: Reconcile opening balance from the statement. Sets the account's
+      // saldo_inicial = saldo anterior detectado no OFX, mas SÓ na primeira
+      // importação de uma conta de débito cujo saldo inicial nunca foi definido —
+      // evita sobrescrever valor manual e a dupla contagem de "Saldo de Abertura".
+      let openingApplied: { balance: number; date: string } | null = null;
+      if (fileType === "ofx" && parsedOpening) {
+        const { data: contaRow } = await supabase
+          .from("contas")
+          .select("saldo_inicial, tipo")
+          .eq("id", context.contaId)
+          .single();
+        if (contaRow && contaRow.tipo !== "credito" && !contaRow.saldo_inicial) {
+          const { count } = await supabase
+            .from("transacoes")
+            .select("id", { count: "exact", head: true })
+            .eq("conta_id", context.contaId)
+            .eq("user_id", context.currentUserId);
+          if (!count) {
+            const { error: updErr } = await supabase
+              .from("contas")
+              .update({ saldo_inicial: parsedOpening.balance, data_abertura: parsedOpening.date })
+              .eq("id", context.contaId);
+            if (!updErr) openingApplied = parsedOpening;
+          }
+        }
+      }
+
       // Step 1: Delete auto-projected duplicates
       let deletedCount = 0;
       if (plan.autoProjectedIdsToDelete.length > 0) {
@@ -929,10 +962,20 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
         },
       ]);
 
+      if (openingApplied) {
+        const [y, m, d] = openingApplied.date.split("-");
+        toast({
+          title: "Saldo anterior detectado no extrato",
+          description: `R$ ${openingApplied.balance.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} em ${d}/${m}/${y} foi definido como saldo inicial da conta, pra reconciliar o saldo sem divergência.`,
+        });
+      }
+
       setPreparedPlan(null);
       queryClient.invalidateQueries({ queryKey: ["transacoes"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["historico_importacoes"] });
+      queryClient.invalidateQueries({ queryKey: ["contas"] });
+      queryClient.invalidateQueries({ queryKey: ["saldos"] });
     } catch (err) {
       console.error(err);
       toast({ title: "Erro ao importar", variant: "destructive" });
