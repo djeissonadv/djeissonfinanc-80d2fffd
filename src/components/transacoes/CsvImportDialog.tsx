@@ -25,7 +25,7 @@ import {
   type ProjectedInstallment,
 } from "@/lib/installment-projection";
 import { Progress } from "@/components/ui/progress";
-import { Upload, FileText, Check, AlertCircle, CreditCard, CalendarDays } from "lucide-react";
+import { Upload, FileText, Check, AlertCircle, CreditCard, CalendarDays, Plus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ImportReport, ImportResult, DuplicateInfo, ImportedItem } from "./ImportReport";
 import { CsvImportPreviewV2, type ImportPreviewData, type InstallmentGroup } from "./CsvImportPreviewV2";
@@ -105,6 +105,8 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
   const [selectedConta, setSelectedConta] = useState<string>("");
   const [detectedConta, setDetectedConta] = useState<string | null>(null);
   const [detectedAccountType, setDetectedAccountType] = useState<"corrente" | "credito" | null>(null);
+  const [detectedAccountNumber, setDetectedAccountNumber] = useState<string | null>(null);
+  const [creatingConta, setCreatingConta] = useState(false);
   const [needsManualSelect, setNeedsManualSelect] = useState(false);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -154,6 +156,41 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     return data || [];
   }, [user]);
 
+  // Cria a conta/cartão que o extrato detectou e ainda não existe. Nasce com
+  // saldo_inicial 0 — para conta de débito com OFX, o saldo anterior é aplicado
+  // automaticamente na importação (Step 0). Não cria transação de abertura.
+  const createDetectedAccount = async () => {
+    if (!user || !detectedConta) return;
+    setCreatingConta(true);
+    try {
+      const tipo = detectedAccountType === "credito" ? "credito" : "debito";
+      const datas = parsedTransactions.map((t) => t.data).filter(Boolean).sort();
+      const dataAbertura = parsedOpening?.date || datas[0] || new Date().toISOString().slice(0, 10);
+      const { data: nova, error } = await supabase
+        .from("contas")
+        .insert({
+          user_id: user.id,
+          nome: detectedConta,
+          tipo,
+          saldo_inicial: 0,
+          data_abertura: dataAbertura,
+          numero_conta: detectedAccountNumber || null,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      await loadContas();
+      setSelectedConta(nova.id);
+      setNeedsManualSelect(false);
+      queryClient.invalidateQueries({ queryKey: ["contas"] });
+      toast({ title: `${tipo === "credito" ? "Cartão" : "Conta"} "${detectedConta}" criado` });
+    } catch {
+      toast({ title: "Erro ao criar a conta", variant: "destructive" });
+    } finally {
+      setCreatingConta(false);
+    }
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -182,6 +219,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     let totalLines = 0;
     let lineLogs: CsvLineLogEntry[] = [];
     let openingDetected: { balance: number; date: string } | null = null;
+    let accountNumber: string | null = null;
 
     if (ext === "pdf") {
       try {
@@ -223,6 +261,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       contaDetectada = parsed.contaDetectada;
       accountType = parsed.accountType;
       transactions = parsed.transactions;
+      accountNumber = parsed.accountNumber;
       openingDetected = parsed.openingBalance != null && parsed.openingDate
         ? { balance: parsed.openingBalance, date: parsed.openingDate }
         : null;
@@ -281,6 +320,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     setParsedTotalLines(totalLines);
     setParsedLineLogs(lineLogs);
     setParsedOpening(openingDetected);
+    setDetectedAccountNumber(accountNumber);
 
     // For non-CSV file types, set default due date
     if (ext !== 'csv') {
@@ -1138,11 +1178,25 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
                       <div className="space-y-2">
                         <p className="text-sm text-muted-foreground flex items-center gap-1">
                           <AlertCircle className="h-4 w-4" />
-                          {detectedConta ? "Conta não encontrada. Selecione:" : "Selecione a conta:"}
+                          {detectedConta ? "Conta não encontrada. Crie a detectada ou selecione uma existente:" : "Selecione a conta:"}
                         </p>
+                        {detectedConta && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full gap-1.5 justify-start"
+                            onClick={createDetectedAccount}
+                            disabled={creatingConta}
+                          >
+                            {detectedAccountType === "credito" ? <CreditCard className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                            {creatingConta
+                              ? "Criando..."
+                              : `Criar ${detectedAccountType === "credito" ? "cartão" : "conta"} "${detectedConta}"`}
+                          </Button>
+                        )}
                         <Select value={selectedConta} onValueChange={setSelectedConta}>
                           <SelectTrigger>
-                            <SelectValue placeholder="Selecione a conta" />
+                            <SelectValue placeholder="Selecione uma conta existente" />
                           </SelectTrigger>
                           <SelectContent>
                             {contas.map((c) => (
