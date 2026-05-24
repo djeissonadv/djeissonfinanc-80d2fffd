@@ -230,27 +230,47 @@ export function detectConflicts(
       }
     }
 
-    // Find partial match against NON-auto-projected existing transactions
-    const partialMatch = existing.find(e => {
-      if (e.descricao.includes('(auto-projetada)')) return false; // already handled above
-      const ePrefix = normalize(e.descricao);
-      if (ePrefix !== prefix) return false;
-      if (Math.abs(Number(e.valor) - tx.valor) > 0.10) return false;
-      if (e.parcela_atual !== tx.parcela_atual) return false;
-      if (e.parcela_total !== tx.parcela_total) return false;
-      if (e.pessoa.toLowerCase() !== tx.pessoa.toLowerCase()) return false;
-      const txOriginal = (tx as any).data_original || tx.data;
-      const eOriginal = e.data_original || e.data;
-      if (txOriginal !== eOriginal) return false;
-      return true;
-    });
+    const txOriginal = (tx as any).data_original || tx.data;
 
-    if (partialMatch) {
+    // Hash-independent dedup against NON-auto-projected existing transactions.
+    // The hash is raw-description based, so it misses the same transaction
+    // re-imported with slightly different text (garbled PDF fonts, extra spaces)
+    // or a shifted date. We compare the normalized alphanumeric skeleton instead.
+    const sameSkeleton = (e: typeof existing[number]) =>
+      !e.descricao.includes('(auto-projetada)') &&
+      normalize(e.descricao) === prefix &&
+      e.parcela_atual === tx.parcela_atual &&
+      e.parcela_total === tx.parcela_total &&
+      e.pessoa.toLowerCase() === tx.pessoa.toLowerCase();
+
+    // 1) Strong duplicate: same skeleton + value (±0,01) + SAME date → already
+    //    imported. Auto-skip (no modal) — this is the common "re-importei o mesmo
+    //    extrato" case the user hits.
+    const strongDup = existing.find(e =>
+      sameSkeleton(e) &&
+      Math.abs(Number(e.valor) - tx.valor) <= 0.01 &&
+      ((e.data_original || e.data) === txOriginal),
+    );
+    if (strongDup) {
+      exactMatches.push({ planned: tx, existingId: strongDup.id });
+      continue;
+    }
+
+    // 2) Ambiguous near-duplicate: same skeleton + value (±0,10) but the date
+    //    shifted a few days (pending vs settled, date correction). Likely the same
+    //    transaction — ask the user instead of inserting a silent duplicate.
+    const ambiguous = existing.find(e =>
+      sameSkeleton(e) &&
+      Math.abs(Number(e.valor) - tx.valor) <= 0.10 &&
+      daysDiff(txOriginal, e.data_original || e.data) <= 5,
+    );
+
+    if (ambiguous) {
       conflicts.push({
         csvTransaction: tx,
-        existingTransaction: partialMatch,
+        existingTransaction: ambiguous,
         matchType: 'partial',
-        matchReason: `Mesma descrição, valor, parcela e pessoa. Datas podem diferir.`,
+        matchReason: `Mesma descrição, valor e pessoa; data difere em poucos dias — possível duplicata já lançada.`,
         choice: 'csv',
       });
     } else {
