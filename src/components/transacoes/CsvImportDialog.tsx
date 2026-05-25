@@ -127,6 +127,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
   const [parsedTotalLines, setParsedTotalLines] = useState(0);
   const [parsedLineLogs, setParsedLineLogs] = useState<CsvLineLogEntry[]>([]);
   const [parsedOpening, setParsedOpening] = useState<{ balance: number; date: string } | null>(null);
+  const [parsedDueDay, setParsedDueDay] = useState<number | null>(null);
   const [loanDoc, setLoanDoc] = useState<CreditoDescritivo | null>(null);
   const [loanContaId, setLoanContaId] = useState<string>("");
   const [loanImporting, setLoanImporting] = useState(false);
@@ -266,6 +267,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     let lineLogs: CsvLineLogEntry[] = [];
     let openingDetected: { balance: number; date: string } | null = null;
     let accountNumber: string | null = null;
+    let dueDay: number | null = null;
 
     if (ext === "pdf") {
       try {
@@ -302,6 +304,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
         totalLines = parsed.totalLines;
         lineLogs = parsed.lineLogs;
         contaDetectada = parsed.institution;
+        dueDay = parsed.detectedDueDate?.day ?? null;
       } catch (err: any) {
         if (err?.message === "PDF_PASSWORD") {
           toast({
@@ -383,6 +386,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       if (parsed.detectedDueDate) {
         setDueMonth(parsed.detectedDueDate.month);
         setDueYear(parsed.detectedDueDate.year);
+        dueDay = parsed.detectedDueDate.day ?? null;
       } else {
         const defaultDue = getDefaultDueDate(transactions);
         setDueMonth(defaultDue.month);
@@ -398,6 +402,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     setParsedLineLogs(lineLogs);
     setParsedOpening(openingDetected);
     setDetectedAccountNumber(accountNumber);
+    setParsedDueDay(dueDay);
 
     // For non-CSV file types, set default due date
     if (ext !== 'csv') {
@@ -1050,6 +1055,12 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
         }
       }
 
+      // Step 0b: guarda o dia de vencimento detectado na fatura do cartão.
+      if (isCredito && parsedDueDay && parsedDueDay >= 1 && parsedDueDay <= 31) {
+        await supabase.from("contas").update({ dia_vencimento: parsedDueDay }).eq("id", context.contaId);
+        queryClient.invalidateQueries({ queryKey: ["contas"] });
+      }
+
       // Step 1: Delete auto-projected duplicates
       let deletedCount = 0;
       if (plan.autoProjectedIdsToDelete.length > 0) {
@@ -1216,6 +1227,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     setParsedTotalLines(0);
     setParsedLineLogs([]);
     setParsedOpening(null);
+    setParsedDueDay(null);
     setLoanDoc(null);
     setLoanContaId("");
     setLoanImporting(false);

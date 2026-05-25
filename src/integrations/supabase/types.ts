@@ -86,6 +86,7 @@ export type Database = {
           codigo_banco: string | null
           created_at: string
           data_abertura: string
+          dia_vencimento: number | null
           id: string
           nome: string
           numero_conta: string | null
@@ -99,6 +100,7 @@ export type Database = {
           codigo_banco?: string | null
           created_at?: string
           data_abertura?: string
+          dia_vencimento?: number | null
           id?: string
           nome: string
           numero_conta?: string | null
@@ -112,6 +114,7 @@ export type Database = {
           codigo_banco?: string | null
           created_at?: string
           data_abertura?: string
+          dia_vencimento?: number | null
           id?: string
           nome?: string
           numero_conta?: string | null

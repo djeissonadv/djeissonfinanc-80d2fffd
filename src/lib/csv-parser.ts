@@ -46,7 +46,7 @@ interface ParseResult {
   totalLines: number;
   lineLogs: CsvLineLogEntry[];
   /** Auto-detected due date from CSV header (e.g. "Data de Vencimento ;15/03/2026") */
-  detectedDueDate: { month: number; year: number } | null;
+  detectedDueDate: { month: number; year: number; day?: number } | null;
 }
 
 /**
@@ -219,7 +219,7 @@ export function parseSicrediCSV(csvText: string, defaultPessoa: string = 'Titula
   const lines = normalizedText.split(/\r?\n/);
 
   let contaDetectada: string | null = null;
-  let detectedDueDate: { month: number; year: number } | null = null;
+  let detectedDueDate: { month: number; year: number; day?: number } | null = null;
   const headerLines = lines.slice(0, 10).join(' ');
 
   if (headerLines.includes('Mastercard Black') || headerLines.includes('Black')) {
@@ -238,6 +238,7 @@ export function parseSicrediCSV(csvText: string, defaultPessoa: string = 'Titula
       detectedDueDate = {
         month: parseInt(dueDateMatch[2]) - 1, // 0-indexed
         year: parseInt(dueDateMatch[3]),
+        day: parseInt(dueDateMatch[1]),
       };
     }
     // Detect total fatura from header: " (=) Total desta fatura (R$) ;"R$ 6.442,76""
@@ -591,7 +592,7 @@ export function parseNubankCSV(csvText: string, defaultPessoa: string = 'Titular
   // Derive a default due date from the latest transaction date so the import
   // dialog pre-fills the billing period correctly (Nubank's filename uses the
   // statement-close date, which we don't parse here).
-  let detectedDueDate: { month: number; year: number } | null = null;
+  let detectedDueDate: { month: number; year: number; day?: number } | null = null;
   if (latestTxDate) {
     const [y, m] = latestTxDate.split('-').map(Number);
     detectedDueDate = { month: m - 1, year: y };

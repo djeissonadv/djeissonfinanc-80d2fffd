@@ -335,6 +335,11 @@ export default function DashboardPage() {
                       {status.emoji} {status.label}
                     </Badge>
                   </div>
+                  {card.dia_vencimento && (
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Vence dia {card.dia_vencimento} · {String(card.dia_vencimento).padStart(2, '0')}/{String(month + 1).padStart(2, '0')}
+                    </p>
+                  )}
                   {saldoAnt > 0 && (
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-muted-foreground">Saldo anterior</span>

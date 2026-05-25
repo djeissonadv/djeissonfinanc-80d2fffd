@@ -9,7 +9,7 @@ interface PdfParseResult {
   /** Total from PDF header for verification */
   headerTotal?: number;
   /** Due date detected from header */
-  detectedDueDate?: { month: number; year: number };
+  detectedDueDate?: { month: number; year: number; day?: number };
 }
 
 // Load PDF.js from CDN
@@ -275,7 +275,7 @@ function parseMercadoPago(
   let lineNumber = 0;
   let dueYear = new Date().getFullYear();
   let headerTotal: number | undefined;
-  let detectedDueDate: { month: number; year: number } | undefined;
+  let detectedDueDate: { month: number; year: number; day?: number } | undefined;
 
   // First pass: find vencimento year and header total from first few pages
   // MP PDF layout puts "Total a pagar" on one row, then the date/limit row, then "R$ X,XXX.XX"
@@ -291,14 +291,14 @@ function parseMercadoPago(
         || text.match(/Vence\s+em\s*(\d{2})\/(\d{2})\/(\d{4})/i);
       if (vencMatch && !detectedDueDate) {
         dueYear = parseInt(vencMatch[3]);
-        detectedDueDate = { month: parseInt(vencMatch[2]) - 1, year: dueYear };
+        detectedDueDate = { month: parseInt(vencMatch[2]) - 1, year: dueYear, day: parseInt(vencMatch[1]) };
       }
       // Also detect due date from the row right after "Total a pagar" header
       if (!detectedDueDate && rowsSinceTotalAPagar >= 0 && rowsSinceTotalAPagar < 3) {
         const dateInRow = text.match(/(\d{2})\/(\d{2})\/(\d{4})/);
         if (dateInRow) {
           dueYear = parseInt(dateInRow[3]);
-          detectedDueDate = { month: parseInt(dateInRow[2]) - 1, year: dueYear };
+          detectedDueDate = { month: parseInt(dateInRow[2]) - 1, year: dueYear, day: parseInt(dateInRow[1]) };
         }
       }
       // Detect "Total a pagar R$ X" on the same row
