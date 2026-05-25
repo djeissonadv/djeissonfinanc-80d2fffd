@@ -17,8 +17,14 @@ import {
   type CsvLineLogEntry,
 } from "@/lib/csv-parser";
 import { autoCategorizarTransacao } from "@/lib/auto-categorize";
-import { parsePdfFile } from "@/lib/pdf-parser";
+import { parsePdfFile, extractPdfText } from "@/lib/pdf-parser";
 import { parseOFX } from "@/lib/ofx-parser";
+import {
+  isCreditoDescritivo,
+  parseCreditoDescritivo,
+  buildEmprestimoRows,
+  type CreditoDescritivo,
+} from "@/lib/credito-parser";
 import {
   projectFutureInstallments,
   detectConflicts,
@@ -27,7 +33,7 @@ import {
   type ProjectedInstallment,
 } from "@/lib/installment-projection";
 import { Progress } from "@/components/ui/progress";
-import { Upload, FileText, Check, AlertCircle, CreditCard, CalendarDays, Plus } from "lucide-react";
+import { Upload, FileText, Check, AlertCircle, CreditCard, CalendarDays, Plus, Landmark } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ImportReport, ImportResult, DuplicateInfo, ImportedItem } from "./ImportReport";
 import { CsvImportPreviewV2, type ImportPreviewData, type InstallmentGroup } from "./CsvImportPreviewV2";
@@ -119,6 +125,9 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
   const [parsedTotalLines, setParsedTotalLines] = useState(0);
   const [parsedLineLogs, setParsedLineLogs] = useState<CsvLineLogEntry[]>([]);
   const [parsedOpening, setParsedOpening] = useState<{ balance: number; date: string } | null>(null);
+  const [loanDoc, setLoanDoc] = useState<CreditoDescritivo | null>(null);
+  const [loanContaId, setLoanContaId] = useState<string>("");
+  const [loanImporting, setLoanImporting] = useState(false);
   const [forceImporting, setForceImporting] = useState(false);
   const [preparedPlan, setPreparedPlan] = useState<PreparedImportPlan | null>(null);
   const [pendingConflicts, setPendingConflicts] = useState<ConflictMatch[] | null>(null);
@@ -194,6 +203,38 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     }
   };
 
+  const handleLoanImport = async () => {
+    if (!user || !loanDoc || !loanContaId) return;
+    setLoanImporting(true);
+    try {
+      const pessoaNome = user.user_metadata?.full_name || user.email?.split("@")[0] || "Titular";
+      const now = new Date();
+      const hojeIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const rows = buildEmprestimoRows(loanDoc, { userId: user.id, contaId: loanContaId, pessoa: pessoaNome, hojeIso });
+      if (rows.length === 0) {
+        toast({ title: "Nenhuma parcela futura a lançar" });
+        setLoanImporting(false);
+        return;
+      }
+      for (let i = 0; i < rows.length; i += 50) {
+        const { error } = await supabase
+          .from("transacoes")
+          .upsert(rows.slice(i, i + 50), { onConflict: "user_id,hash_transacao" });
+        if (error) throw error;
+      }
+      queryClient.invalidateQueries({ queryKey: ["transacoes"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["dividas-future"] });
+      queryClient.invalidateQueries({ queryKey: ["dividas-parcelamentos"] });
+      toast({ title: `${rows.length} parcelas do empréstimo ${loanDoc.contratoKey} lançadas` });
+      handleClose();
+    } catch {
+      toast({ title: "Erro ao lançar o empréstimo", variant: "destructive" });
+    } finally {
+      setLoanImporting(false);
+    }
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -226,6 +267,22 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
 
     if (ext === "pdf") {
       try {
+        // Documento Descritivo de Crédito (empréstimo/financiamento) tem fluxo próprio:
+        // não é fatura, então projetamos as parcelas futuras numa conta de débito.
+        const rawText = (await extractPdfText(f)).join("\n");
+        if (isCreditoDescritivo(rawText)) {
+          const ddc = parseCreditoDescritivo(rawText);
+          if (ddc && ddc.futuras.length > 0) {
+            setLoanDoc(ddc);
+            const debitos = (contasList || []).filter((c: any) => c.tipo === "debito");
+            setLoanContaId(debitos.length === 1 ? debitos[0].id : "");
+            return; // UI do empréstimo assume daqui
+          }
+          toast({ title: "Documento de crédito sem parcelas futuras a lançar" });
+          setFile(null);
+          setFileType(null);
+          return;
+        }
         const pessoaNome = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Titular';
         const parsed = await parsePdfFile(f, pessoaNome);
         if (parsed.transactions.length === 0 && parsed.totalLines === 0) {
@@ -1141,6 +1198,10 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     setParsedSkippedLines([]);
     setParsedTotalLines(0);
     setParsedLineLogs([]);
+    setParsedOpening(null);
+    setLoanDoc(null);
+    setLoanContaId("");
+    setLoanImporting(false);
     setForceImporting(false);
     setPreparedPlan(null);
     setPendingConflicts(null);
@@ -1182,7 +1243,44 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
               />
             ) : (
               <div className="space-y-4">
-                {!file ? (
+                {loanDoc ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
+                      <Landmark className="h-5 w-5 text-muted-foreground" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium block">Empréstimo detectado — {loanDoc.instituicao}</span>
+                        <span className="text-xs text-muted-foreground">Contrato {loanDoc.contratoKey}</span>
+                      </div>
+                    </div>
+                    <div className="bg-muted/50 rounded-lg p-3 space-y-1 text-sm">
+                      <div className="flex justify-between"><span className="text-muted-foreground">Parcela (fixa)</span><span className="font-medium">{loanDoc.parcelaFixa.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span></div>
+                      <div className="flex justify-between"><span className="text-muted-foreground">Parcelas futuras a lançar</span><span className="font-medium">{loanDoc.futuras.length} de {loanDoc.totalParcelas}</span></div>
+                      {loanDoc.saldoDevedor != null && (
+                        <div className="flex justify-between"><span className="text-muted-foreground">Saldo devedor</span><span className="font-medium">{loanDoc.saldoDevedor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span></div>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Conta de débito que paga este empréstimo</Label>
+                      <Select value={loanContaId} onValueChange={setLoanContaId}>
+                        <SelectTrigger><SelectValue placeholder="Selecione a conta de débito" /></SelectTrigger>
+                        <SelectContent>
+                          {contas.filter((c) => c.tipo === "debito").map((c) => (
+                            <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      As {loanDoc.futuras.length} parcelas futuras entram como "Empréstimos" na conta escolhida e aparecem em Dívidas e Projeções. Reimportar atualiza sem duplicar.
+                    </p>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" onClick={handleClose}>Cancelar</Button>
+                      <Button onClick={handleLoanImport} disabled={!loanContaId || loanImporting}>
+                        {loanImporting ? "Lançando..." : `Lançar ${loanDoc.futuras.length} parcelas`}
+                      </Button>
+                    </div>
+                  </div>
+                ) : !file ? (
                   <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-8 cursor-pointer hover:border-foreground/30 transition-colors">
                     <Upload className="h-8 w-8 text-muted-foreground mb-2" />
                     <span className="text-sm text-muted-foreground">Clique para selecionar um arquivo</span>
