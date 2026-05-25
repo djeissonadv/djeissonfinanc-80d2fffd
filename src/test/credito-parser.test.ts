@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCreditoDescritivo, buildEmprestimoRows } from '@/lib/credito-parser';
+import { parseCreditoDescritivo, buildEmprestimoRows, isSicrediLoanCsv, parseSicrediLoanCsv } from '@/lib/credito-parser';
 
 // Trechos representativos do texto extraído dos PDFs reais.
 const SICREDI = `Documento Descritivo de Crédito
@@ -79,5 +79,35 @@ describe('buildEmprestimoRows', () => {
     });
     // só 18 (20/07/2026) e 48 ficam (17 venceu 20/06)
     expect(rows.map(r => r.parcela_atual)).toEqual([18, 48]);
+  });
+});
+
+const SICREDI_CSV = `"Número do título";"Parcela";"Situação";"Valor a Liquidar (R$)";"Data Vencimento";"Data Pagamento"
+"C5A9304161";"010";"LIQUIDADO";"601,71";"20/05/2026";"20/05/2026"
+"C5A9304161";"011";"NORMAL";"601,71";"20/06/2026";""
+"C5A9304161";"012";"NORMAL";"601,71";"20/07/2026";""
+"C5A9304161";"036";"NORMAL";"601,71";"20/07/2028";""`;
+
+describe('parseSicrediLoanCsv', () => {
+  it('detecta o formato do cronograma Sicredi', () => {
+    expect(isSicrediLoanCsv(SICREDI_CSV)).toBe(true);
+    expect(isSicrediLoanCsv('date,title,amount\n2026-01-01,Loja,10')).toBe(false);
+  });
+
+  it('extrai contrato, parcela fixa e futuras (NORMAL = aberta)', () => {
+    const r = parseSicrediLoanCsv(SICREDI_CSV)!;
+    expect(r.contratoKey).toBe('C5A9304161');
+    expect(r.parcelaFixa).toBe(601.71);
+    expect(r.totalParcelas).toBe(36);
+    expect(r.futuras.map(p => p.numero)).toEqual([11, 12, 36]); // 10 é LIQUIDADO
+    expect(r.futuras[0].vencimento).toBe('2026-06-20');
+  });
+
+  it('gera linhas com hash por contrato (agrupa em Dívidas)', () => {
+    const r = parseSicrediLoanCsv(SICREDI_CSV)!;
+    const rows = buildEmprestimoRows(r, { userId: 'u1', contaId: 'c1', pessoa: 'D', hojeIso: '2026-05-25' });
+    expect(rows.map(x => x.parcela_atual)).toEqual([11, 12, 36]);
+    expect(rows[0].hash_transacao).toBe('C5A9304161_p11');
+    expect(rows[0].valor).toBe(601.71);
   });
 });

@@ -22,6 +22,8 @@ import { parseOFX } from "@/lib/ofx-parser";
 import {
   isCreditoDescritivo,
   parseCreditoDescritivo,
+  isSicrediLoanCsv,
+  parseSicrediLoanCsv,
   buildEmprestimoRows,
   type CreditoDescritivo,
 } from "@/lib/credito-parser";
@@ -346,6 +348,21 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     } else {
       const text = await f.text();
       const pessoaNomeCsv = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Titular';
+
+      // CSV de cronograma de empr\u00E9stimo Sicredi \u2192 fluxo de empr\u00E9stimo (n\u00E3o \u00E9 extrato).
+      if (isSicrediLoanCsv(text)) {
+        const ddc = parseSicrediLoanCsv(text);
+        if (ddc && ddc.futuras.length > 0) {
+          setLoanDoc(ddc);
+          const debitos = (contasList || []).filter((c: any) => c.tipo === "debito");
+          setLoanContaId(debitos.length === 1 ? debitos[0].id : "");
+          return;
+        }
+        toast({ title: "Cronograma sem parcelas futuras a lan\u00E7ar" });
+        setFile(null);
+        setFileType(null);
+        return;
+      }
 
       // Detect Nubank credit card CSV (header: "date,title,amount") vs Sicredi/MP CSV
       const firstNonEmptyLine = text.replace(/^\uFEFF/, '').split(/\r?\n/).find(l => l.trim()) || '';

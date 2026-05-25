@@ -145,6 +145,57 @@ function parseMercadoPago(text: string): CreditoDescritivo | null {
   };
 }
 
+// ── Sicredi CSV (cronograma de parcelas do empréstimo) ─────────────────────
+// Header: "Número do título";"Parcela";"Situação";"Valor a Liquidar (R$)";"Data Vencimento";"Data Pagamento"
+export function isSicrediLoanCsv(text: string): boolean {
+  const head = (text.replace(/^﻿/, '').split(/\r?\n/, 1)[0] || '').toLowerCase();
+  return (
+    (head.includes('número do título') || head.includes('numero do titulo')) &&
+    head.includes('parcela') &&
+    head.includes('vencimento')
+  );
+}
+
+export function parseSicrediLoanCsv(text: string): CreditoDescritivo | null {
+  if (!isSicrediLoanCsv(text)) return null;
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const splitCols = (l: string) => l.split(';').map(c => c.replace(/^"|"$/g, '').trim());
+
+  const parcelas: CreditoParcela[] = [];
+  const valores: number[] = [];
+  let contratoKey = 'SICREDI';
+
+  for (const l of lines.slice(1)) { // pula o cabeçalho
+    const cols = splitCols(l);
+    if (cols.length < 5) continue;
+    const [titulo, parcelaStr, situacao, valorStr, vencStr] = cols;
+    const numero = parseInt(parcelaStr, 10);
+    if (!numero) continue;
+    const dm = vencStr.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    if (!dm) continue;
+    if (titulo) contratoKey = titulo;
+    const valor = parseBR(valorStr);
+    const vencimento = `${dm[3]}-${dm[2]}-${dm[1]}`;
+    // Liquidado/pago/quitado = paga; o resto (NORMAL, em atraso) = futura/aberta.
+    const futura = !/liquidad|pago|quitad/i.test(situacao);
+    valores.push(valor);
+    parcelas.push({ numero, vencimento, valor, futura });
+  }
+  if (parcelas.length === 0) return null;
+
+  const parcelaFixa = median(valores);
+  const futuras = parcelas.filter(p => p.futura).map(p => ({ ...p, valor: parcelaFixa }));
+  return {
+    contratoKey,
+    instituicao: 'Sicredi',
+    totalParcelas: parcelas.reduce((mx, p) => Math.max(mx, p.numero), parcelas.length),
+    parcelaFixa,
+    saldoDevedor: futuras.reduce((s, p) => s + p.valor, 0),
+    parcelas,
+    futuras,
+  };
+}
+
 // ── Construção das transações de empréstimo (parcelas futuras) ──────────────
 export interface EmprestimoRow {
   user_id: string;
