@@ -10,6 +10,8 @@ import {
   parseSicrediCSV,
   parseNubankCSV,
   normalizeDescription,
+  isFaturaPayment,
+  isCreditoParcelamento,
   type SkippedLine,
   type ClassifiedTransaction,
   type CsvLineLogEntry,
@@ -56,6 +58,7 @@ type PlannedTransaction = {
   pessoa: string;
   codigo_cartao: string | null;
   valor_dolar: number | null;
+  ignorar_dashboard?: boolean;
   _isOriginal: boolean;
 };
 
@@ -615,6 +618,46 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       valor_dolar: t.valor_dolar || null,
       _isOriginal: !("_isProjected" in t),
     }));
+
+    // Importa PAGAMENTOS reais da fatura (ex: "Pagamento da fatura de X") como
+    // receita ignorada no dashboard, pra o saldo acumulado/rollover refletir o que
+    // foi pago. "Crédito por parcelamento" fica de fora (é abatimento do
+    // financiamento, não caixa). Guard anti-duplicata: pula se já existe um
+    // pagamento (manual via "Pagar fatura" ou import anterior) no mesmo cartão +
+    // período + valor próximo.
+    for (const pay of paymentRaw) {
+      if (!isFaturaPayment(pay.descricao) || isCreditoParcelamento(pay.descricao)) continue;
+      const compet = (pay as any)._mes_competencia || null;
+      const jaTem = existingTxs.some((e) =>
+        isFaturaPayment(e.descricao) &&
+        (e.mes_competencia || null) === compet &&
+        Math.abs(Number(e.valor) - pay.valor) <= 0.5,
+      );
+      const naBatelada = newTransactions.some((t) => t.hash_transacao === pay.hash_transacao);
+      if (jaTem || naBatelada) continue;
+      newTransactions.push({
+        user_id: currentUserId,
+        conta_id: contaId,
+        data: pay.data,
+        data_original: (pay as any)._data_original ?? pay.data,
+        mes_competencia: compet,
+        descricao: pay.descricao,
+        descricao_normalizada: pay.descricao_normalizada || normalizeDescription(pay.descricao),
+        valor: pay.valor,
+        categoria: "Pagamento Fatura",
+        tipo: "receita",
+        essencial: true,
+        parcela_atual: null,
+        parcela_total: null,
+        grupo_parcela: null,
+        hash_transacao: pay.hash_transacao,
+        pessoa: pay.pessoa,
+        codigo_cartao: null,
+        valor_dolar: null,
+        ignorar_dashboard: true,
+        _isOriginal: true,
+      });
+    }
 
     const duplicateItems: DuplicateInfo[] = exactMatches
       .filter((em) => {

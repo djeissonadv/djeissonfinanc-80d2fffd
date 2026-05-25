@@ -59,6 +59,15 @@ export function isDevolution(desc: string): boolean {
   return d.includes('devoluc') || d.includes('devolução') || d.includes('estorno');
 }
 
+/**
+ * "Crédito por parcelamento da fatura" é um abatimento interno do parcelamento
+ * (não é caixa). Diferenciamos de um pagamento real pra não tratá-lo como tal.
+ */
+export function isCreditoParcelamento(desc: string): boolean {
+  const d = desc.toLowerCase();
+  return d.includes('crédito por parcelamento') || d.includes('credito por parcelamento');
+}
+
 export function isFaturaPayment(desc: string): boolean {
   if (isDevolution(desc)) return false;
   const d = desc.toLowerCase();
