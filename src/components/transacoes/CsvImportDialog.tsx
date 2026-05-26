@@ -426,11 +426,24 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       }
     }
 
-    if (contaDetectada && contasList) {
-      const match = contasList.find((c: any) =>
-        c.nome.toLowerCase().includes(contaDetectada!.toLowerCase()) ||
-        (c.numero_conta && contaDetectada === c.numero_conta)
-      );
+    if (contasList) {
+      // 1. Match PRECISO por número da conta (OFX ACCTID / CSV). É o único jeito
+      //    seguro quando há mais de uma conta do mesmo banco.
+      let match: any = null;
+      if (accountNumber) {
+        match = contasList.find((c: any) => c.numero_conta && c.numero_conta === accountNumber) || null;
+      }
+      // 2. Match por NOME — só auto-seleciona se for INEQUÍVOCO (exatamente 1
+      //    candidato). Com 2+ contas "Sicredi", NÃO chuta a primeira (era o bug:
+      //    selecionava a conta errada e o dedup buscava duplicatas no lugar errado,
+      //    marcando tudo como novo). Nesse caso exige seleção manual.
+      if (!match && contaDetectada) {
+        const nameMatches = contasList.filter((c: any) =>
+          c.nome.toLowerCase().includes(contaDetectada!.toLowerCase()) ||
+          (c.numero_conta && contaDetectada === c.numero_conta)
+        );
+        if (nameMatches.length === 1) match = nameMatches[0];
+      }
       if (match) {
         setSelectedConta(match.id);
         setNeedsManualSelect(false);
@@ -1060,6 +1073,24 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
             ? `${dueYear}-${String(dueMonth + 1).padStart(2, "0")}`
             : `${newestDate.getFullYear()}-${String(newestDate.getMonth() + 1).padStart(2, "0")}`;
         await cleanOrphanProjections(context.contaId, context.currentUserId, parsedTransactions, targetMonth);
+      }
+
+      // Step 0: Grava o número da conta detectado (OFX ACCTID) na conta, se ela
+      // ainda não tiver. Assim a PRÓXIMA importação casa por número (preciso) e
+      // não cai no match ambíguo por nome (que selecionava a conta errada quando
+      // há duas do mesmo banco, ex: "Sicredi 0228" e "Sicredi 0258").
+      if (detectedAccountNumber) {
+        const { data: contaNumRow } = await supabase
+          .from("contas")
+          .select("numero_conta")
+          .eq("id", context.contaId)
+          .single();
+        if (contaNumRow && !contaNumRow.numero_conta) {
+          await supabase
+            .from("contas")
+            .update({ numero_conta: detectedAccountNumber })
+            .eq("id", context.contaId);
+        }
       }
 
       // Step 0: Reconcile opening balance from the statement. Sets the account's
