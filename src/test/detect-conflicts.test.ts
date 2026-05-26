@@ -97,6 +97,38 @@ describe('detectConflicts — dedup independente de hash', () => {
     expect(r.clean).toHaveLength(0);
   });
 
+  it('reimport da mesma fatura: mesma competência + desc + valor → pula, mesmo com data (ano) diferente', () => {
+    // 1º import: MP inferiu ano 2025 pra compra DD/MM; 2º import inferiu 2026.
+    const proj = existing({
+      id: 'f1',
+      descricao: 'MERCADOLIVRE COMPRA',
+      valor: 100,
+      data: '2025-04-07',
+      data_original: '2025-04-07',
+      mes_competencia: '2026-03',
+      hash_transacao: 'hashA',
+    });
+    const real = planned({
+      descricao: 'MERCADOLIVRE COMPRA',
+      valor: 100,
+      data: '2026-04-07',
+      data_original: '2026-04-07',
+      mes_competencia: '2026-03',
+      hash_transacao: 'hashB',
+    });
+    const r = detectConflicts([real], [proj]);
+    expect(r.exactMatches).toHaveLength(1);
+    expect(r.clean).toHaveLength(0);
+  });
+
+  it('mesma desc/valor em competência diferente NÃO é tratada como duplicata pela regra de fatura', () => {
+    const e1 = existing({ id: 'a', descricao: 'NETFLIX', valor: 59.9, mes_competencia: '2026-02', data: '2026-02-28', data_original: '2026-02-28', hash_transacao: 'h1' });
+    const real = planned({ descricao: 'NETFLIX', valor: 59.9, mes_competencia: '2026-03', data: '2026-03-31', data_original: '2026-03-31', hash_transacao: 'h2' });
+    const r = detectConflicts([real], [e1]);
+    expect(r.exactMatches).toHaveLength(0);
+    expect(r.clean).toHaveLength(1);
+  });
+
   it('não substitui recorrente projetada de outro mês', () => {
     const proj = existing({
       id: 'proj1',

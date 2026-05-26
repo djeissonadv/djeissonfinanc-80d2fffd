@@ -266,6 +266,24 @@ export function detectConflicts(
       e.parcela_total === tx.parcela_total &&
       e.pessoa.toLowerCase() === tx.pessoa.toLowerCase();
 
+    // 0) Mesma fatura (cartão): quando há mes_competencia, uma transação já
+    //    existente no MESMO período com mesmo esqueleto + valor + parcela + pessoa
+    //    é a mesma — mesmo que a DATA da compra tenha o ANO inferido diferente
+    //    entre importações (PDF do Mercado Pago infere o ano pelo mês da fatura).
+    //    Sem isso, reimportar a mesma fatura com período diferente duplicava.
+    const txCompet = (tx as any).mes_competencia || null;
+    if (txCompet) {
+      const sameFatura = existing.find(e =>
+        sameSkeleton(e) &&
+        e.mes_competencia === txCompet &&
+        Math.abs(Number(e.valor) - tx.valor) <= 0.01,
+      );
+      if (sameFatura) {
+        exactMatches.push({ planned: tx, existingId: sameFatura.id });
+        continue;
+      }
+    }
+
     // 1) Strong duplicate: same skeleton + value (±0,01) + SAME date → already
     //    imported. Auto-skip (no modal) — this is the common "re-importei o mesmo
     //    extrato" case the user hits.
