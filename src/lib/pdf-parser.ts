@@ -657,6 +657,112 @@ function parseNubankConta(
   };
 }
 
+// ── Nubank CARD (fatura de cartão de crédito) parser ───────────
+// Formato distinto da Nu Conta e dos demais: seção "TRANSAÇÕES DE DD MMM A DD MMM"
+// e linhas "DD MMM •••• NNNN  descrição  R$ valor" (data sem ano, mês em PT).
+// O parser genérico falhava porque exige data DD/MM e seções "Movimentações".
+
+const NUCARD_VENC = /Data de vencimento:?\s*(\d{1,2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(\d{4})/i;
+const NUCARD_TOTAL = /Total a pagar\s+R?\$?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i;
+// DD MMM [•••• NNNN] descrição R$ valor   (valor pode ser negativo com − ou -)
+const NUCARD_LINE = /^(\d{1,2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(?:[••·∙*]{2,}\s*\d{3,4}\s+)?(.+?)\s+([−-]?\s*R\$\s*\d{1,3}(?:\.\d{3})*,\d{2})$/i;
+const NUCARD_PARCELA = /-?\s*Parcela\s+(\d{1,2})\/(\d{1,2})/i;
+
+export function parseNubankCard(pages: string[], defaultPessoa: string = 'Titular'): PdfParseResult {
+  const fullText = pages.join('\n');
+  const transactions: ClassifiedTransaction[] = [];
+  const lineLogs: CsvLineLogEntry[] = [];
+  const hashCounts = new Map<string, number>();
+
+  // Vencimento → ano/mês de referência (para inferir o ano das datas sem ano).
+  const vm = fullText.match(NUCARD_VENC);
+  const dueMonth = vm ? NU_MONTHS[vm[2].toUpperCase()] : null; // 1-12
+  const dueYear = vm ? parseInt(vm[3]) : new Date().getFullYear();
+  const detectedDueDate = vm
+    ? { day: parseInt(vm[1]), month: (dueMonth! - 1), year: dueYear }
+    : undefined;
+
+  const totalMatch = fullText.match(NUCARD_TOTAL);
+  const headerTotal = totalMatch ? (parseValue(totalMatch[1]) ?? undefined) : undefined;
+
+  const rawLines = fullText.split(/\n/);
+  let lineNumber = 0;
+  for (const raw of rawLines) {
+    lineNumber++;
+    const line = raw.replace(/\s{2,}/g, ' ').trim();
+    if (!line) continue;
+
+    const m = line.match(NUCARD_LINE);
+    if (!m) continue;
+
+    const day = parseInt(m[1]);
+    const monthNum = NU_MONTHS[m[2].toUpperCase()]; // 1-12
+    if (!monthNum) continue;
+    // Inferência de ano: meses APÓS o mês do vencimento pertencem ao ano anterior
+    // (ex: fatura jan/2026 cobre "04 DEZ a 04 JAN" → DEZ é 2025, JAN é 2026).
+    const year = dueMonth && monthNum > dueMonth ? dueYear - 1 : dueYear;
+    const isoDate = `${year}-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+    let descricao = m[3].trim();
+    // Normaliza sinal de menos unicode (−, U+2212) para '-' antes de parsear.
+    const valStr = m[4].replace(/−/g, '-');
+    const valor = parseValue(valStr);
+    if (valor === null || valor === 0) {
+      lineLogs.push({ lineNumber, content: line, status: 'ignorada', reason: 'Valor zero/ inválido' });
+      continue;
+    }
+
+    // Parcela "Parcela N/M" (Nubank escreve "- Parcela 8/12")
+    let parcela_atual: number | null = null;
+    let parcela_total: number | null = null;
+    const pm = descricao.match(NUCARD_PARCELA);
+    if (pm) {
+      parcela_atual = parseInt(pm[1]);
+      parcela_total = parseInt(pm[2]);
+      descricao = descricao.replace(NUCARD_PARCELA, '').trim();
+    }
+
+    // Sinal: valor negativo (pagamento/estorno) ou descrição de pagamento → receita.
+    const ehCredito = valor < 0 || /pagamento|saldo restante|estorno|reembolso|cashback/i.test(descricao);
+    const tipo = ehCredito ? ('receita' as const) : ('despesa' as const);
+    const rawValor = ehCredito ? -Math.abs(valor) : Math.abs(valor);
+    const absValor = Math.abs(valor);
+
+    const baseHash = generateHash(isoDate, descricao, absValor, defaultPessoa, parcela_atual, parcela_total);
+    const count = hashCounts.get(baseHash) || 0;
+    hashCounts.set(baseHash, count + 1);
+    const hash_transacao = count > 0 ? `${baseHash}_seq${count}` : baseHash;
+
+    transactions.push({
+      data: isoDate,
+      descricao,
+      descricao_normalizada: normalizeDescription(descricao),
+      valor: absValor,
+      tipo,
+      parcela_atual,
+      parcela_total,
+      pessoa: defaultPessoa,
+      hash_transacao,
+      codigo_cartao: null,
+      valor_dolar: null,
+      classification: classifyTransaction(parcela_atual, parcela_total, rawValor, descricao),
+      source_line_number: lineNumber,
+      source_line_content: line,
+    });
+    lineLogs.push({ lineNumber, content: line, status: 'importada', reason: 'Cartão Nubank', hash_transacao });
+  }
+
+  return {
+    transactions,
+    skippedLines: [],
+    totalLines: rawLines.length,
+    lineLogs,
+    institution: 'Nubank',
+    headerTotal,
+    detectedDueDate,
+  };
+}
+
 // ── Generic PDF parser (existing logic, improved) ──────────────
 
 const GENERIC_DATE_REGEX = /(\d{2}\/\d{2}\/\d{4}|\d{2}\/\d{2}\/\d{2})/;
@@ -817,6 +923,16 @@ export async function parsePdfFile(file: File, defaultPessoa: string = 'Titular'
     } catch (err3) {
       console.error('[pdf-parser] Second structured extraction attempt for Nu Conta failed:', err3);
     }
+  }
+
+  // Nubank CARTÃO de crédito: tem o cabeçalho de transações "TRANSAÇÕES DE DD MMM
+  // A DD MMM" e mês em PT. O parser genérico (data DD/MM) não pega — usa o dedicado.
+  if (
+    (combined.includes('nubank') || combined.includes('nu pagamentos')) &&
+    /transa[çc][õo]es\s+de\s+\d{1,2}\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)/i.test(combined)
+  ) {
+    const nu = parseNubankCard(pages, defaultPessoa);
+    if (nu.transactions.length > 0) return nu;
   }
 
   return parseGenericPdf(pages, defaultPessoa);
