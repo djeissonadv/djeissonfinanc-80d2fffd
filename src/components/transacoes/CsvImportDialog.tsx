@@ -1110,6 +1110,26 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       }
 
       // Step 2: Insert new transactions
+      // Validação PRÉ-INSERT: confere campos obrigatórios/tipos ANTES de enviar
+      // ao banco, transformando erro críptico de constraint (ex: NOT NULL) numa
+      // mensagem clara e acionável, e evitando insert parcial. Robustez do import.
+      const problemas: string[] = [];
+      for (const t of plan.newTransactions as any[]) {
+        const v = Number(t.valor);
+        if (!Number.isFinite(v)) problemas.push(`valor inválido (${t.descricao ?? '??'})`);
+        if (!t.data || !/^\d{4}-\d{2}-\d{2}$/.test(t.data)) problemas.push(`data inválida (${t.descricao ?? '??'})`);
+        if (t.tipo !== 'receita' && t.tipo !== 'despesa') problemas.push(`tipo inválido "${t.tipo}" (${t.descricao ?? '??'})`);
+        if (typeof t.ignorar_dashboard !== 'boolean') problemas.push(`ignorar_dashboard não-booleano (${t.descricao ?? '??'})`);
+        if (!t.descricao || !String(t.descricao).trim()) problemas.push(`descrição vazia`);
+        if (!t.hash_transacao) problemas.push(`hash ausente (${t.descricao ?? '??'})`);
+      }
+      if (problemas.length > 0) {
+        const amostra = problemas.slice(0, 5).join('; ');
+        throw new Error(
+          `${problemas.length} transação(ões) com dados inválidos antes de salvar: ${amostra}${problemas.length > 5 ? '…' : ''}. Nada foi importado.`,
+        );
+      }
+
       let imported = 0;
       const batchSize = 50;
 
