@@ -184,7 +184,7 @@ export function detectConflicts(
   // This handles garbled font differences (e.g., "TOALIBFO" vs "TOALINFO") by focusing
   // on the alphanumeric skeleton of the description.
   const normalize = (s: string) => s
-    .replace(/\s*\(auto-projetada\)/, '')
+    .replace(/\s*\(auto-projetada\)/g, '')
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '')
