@@ -413,7 +413,15 @@ export default function ProjecoesPage() {
         </Card>
         <Card>
           <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">Saldo Projetado Dez/26</p>
+            <p className="text-sm text-muted-foreground">
+              {projections.length > 0
+                ? (() => {
+                    const ultimo = projections[projections.length - 1].mes; // YYYY-MM
+                    const [ano, mes] = ultimo.split('-');
+                    return `Saldo Projetado ${getMonthName(Number(mes) - 1)}/${ano.slice(2)}`;
+                  })()
+                : 'Saldo Projetado'}
+            </p>
             {projections.length > 0 ? (() => {
               const total = projections.reduce((s, p) => s + p.saldoMes, 0);
               return (

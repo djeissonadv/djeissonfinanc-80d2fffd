@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTodayIso } from '@/hooks/useTodayIso';
-import { formatCurrency, getMonthRange } from '@/lib/format';
+import { formatCurrency } from '@/lib/format';
 import { fetchAllRows } from '@/lib/supabase-fetch';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,7 +20,7 @@ import { MonthSelector } from '@/components/MonthSelector';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { isFaturaPayment, isDevolution } from '@/lib/csv-parser';
+import { useFaturaAcumulada } from '@/hooks/useFaturaAcumulada';
 import { format, parse } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -52,7 +52,6 @@ export default function ContasPage() {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
-  const { start, end } = getMonthRange(month, year);
 
   const { data: contas } = useQuery({
     queryKey: ['contas', user?.id],
@@ -91,50 +90,13 @@ export default function ContasPage() {
     enabled: !!user,
   });
 
-  // Monthly invoice data for credit cards (consistent with Dashboard: uses mes_competencia)
-  const { data: faturaData } = useQuery({
-    queryKey: ['faturas', user?.id, month, year],
-    queryFn: async () => {
-      const billingPeriod = `${year}-${String(month + 1).padStart(2, '0')}`;
-
-      // By mes_competencia (primary) — no ignorar_dashboard filter since
-      // fatura payments are marked as internal transfers but must be
-      // counted for accurate card balance display
-      const byPeriod = await fetchAllRows<{ conta_id: string; tipo: string; valor: number; descricao: string; mes_competencia: string | null }>(() => supabase
-        .from('transacoes')
-        .select('conta_id, tipo, valor, descricao, mes_competencia')
-        .eq('user_id', user!.id)
-        .eq('mes_competencia', billingPeriod));
-
-      // Fallback for older imports without mes_competencia
-      const byDate = await fetchAllRows<{ conta_id: string; tipo: string; valor: number; descricao: string; mes_competencia: string | null }>(() => supabase
-        .from('transacoes')
-        .select('conta_id, tipo, valor, descricao, mes_competencia')
-        .eq('user_id', user!.id)
-        .is('mes_competencia', null)
-        .gte('data', start)
-        .lte('data', end));
-
-      const allTxs = [...byPeriod, ...byDate];
-      const faturas: Record<string, { despesas: number; pagamentos: number }> = {};
-      allTxs.forEach(t => {
-        if (!faturas[t.conta_id]) faturas[t.conta_id] = { despesas: 0, pagamentos: 0 };
-        if (t.tipo === 'despesa') {
-          faturas[t.conta_id].despesas += Number(t.valor);
-        }
-        const devolution = isDevolution(t.descricao);
-        const payment = isFaturaPayment(t.descricao);
-        if (payment && t.tipo === 'receita') {
-          faturas[t.conta_id].pagamentos += Math.abs(Number(t.valor));
-        }
-        if (devolution && t.tipo === 'receita') {
-          faturas[t.conta_id].despesas -= Math.abs(Number(t.valor));
-        }
-      });
-      return faturas;
-    },
-    enabled: !!user,
-  });
+  // Dados da fatura dos cartões — MESMA fonte do Dashboard (useFaturaAcumulada),
+  // que inclui o saldo que rolou de meses anteriores (saldoAnterior). Antes a
+  // Contas somava só o mês corrente, então a "fatura" e o status (Paga/Em aberto)
+  // divergiam do Dashboard quando havia saldo não pago acumulando.
+  const billingPeriod = `${year}-${String(month + 1).padStart(2, '0')}`;
+  const creditCardIds = (contas || []).filter((c: any) => c.tipo === 'credito').map((c: any) => c.id);
+  const { data: faturaAcum } = useFaturaAcumulada(creditCardIds, billingPeriod);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -201,9 +163,11 @@ export default function ContasPage() {
         {contas?.map(conta => {
           const saldoAtual = (conta.saldo_inicial || 0) + (saldos?.[conta.id] || 0);
           const isCredito = conta.tipo === 'credito';
-          const fatura = faturaData?.[conta.id];
-          const faturaTotal = fatura?.despesas || 0;
-          const pagamentoTotal = fatura?.pagamentos || 0;
+          const acum = faturaAcum?.[conta.id];
+          // Fatura total a pagar = saldo que rolou de meses anteriores + despesas do mês.
+          // O status compara o que foi pago no mês contra esse total acumulado.
+          const faturaTotal = (acum?.saldoAnterior || 0) + (acum?.despesasMes || 0);
+          const pagamentoTotal = acum?.pagamentosMes || 0;
           const status = isCredito ? getInvoiceStatus(faturaTotal, pagamentoTotal) : null;
 
           return (
