@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { parseSicrediCSV, normalizeDescription, parseValue } from '@/lib/csv-parser';
+import { parseSicrediCSV, normalizeDescription, parseValue, isSaldoAnteriorFatura } from '@/lib/csv-parser';
+
+describe('isSaldoAnteriorFatura — artefato de rollover (não é despesa nova)', () => {
+  it('detecta "Saldo anterior da fatura"', () => {
+    expect(isSaldoAnteriorFatura('Saldo anterior da fatura')).toBe(true);
+    expect(isSaldoAnteriorFatura('SALDO ANTERIOR DA FATURA')).toBe(true);
+  });
+  it('NÃO confunde com parcela de fatura financiada (despesa real)', () => {
+    expect(isSaldoAnteriorFatura('Parcela da fatura de dezembro/2025')).toBe(false);
+  });
+  it('NÃO confunde com compra normal', () => {
+    expect(isSaldoAnteriorFatura('MERCADOLIVRE*EBAZARCOMBRL')).toBe(false);
+  });
+});
 
 describe('parseValue — formatos de número monetário', () => {
   it('formato BR com milhar e decimal: 7.038,96 → 7038.96', () => {

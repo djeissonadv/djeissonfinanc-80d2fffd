@@ -68,6 +68,18 @@ export function isCreditoParcelamento(desc: string): boolean {
   return d.includes('crédito por parcelamento') || d.includes('credito por parcelamento');
 }
 
+/**
+ * "Saldo anterior da fatura" é o artefato de reconciliação que o parser do PDF
+ * injeta quando o total do cabeçalho > soma das linhas (rollover do mês anterior
+ * não pago). NÃO é uma despesa nova — é a repetição do saldo de meses anteriores.
+ * Quando o histórico está importado, esse valor JÁ está itemizado nos meses
+ * anteriores, então contá-lo de novo é dupla contagem. Logo: nunca somar como
+ * despesa do mês nem na fatura acumulada (que já faz o rollover por conta própria).
+ */
+export function isSaldoAnteriorFatura(desc: string): boolean {
+  return /saldo anterior da fatura/i.test(desc);
+}
+
 export function isFaturaPayment(desc: string): boolean {
   if (isDevolution(desc)) return false;
   const d = desc.toLowerCase();

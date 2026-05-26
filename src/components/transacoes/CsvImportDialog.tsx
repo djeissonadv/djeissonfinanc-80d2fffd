@@ -12,6 +12,7 @@ import {
   normalizeDescription,
   isFaturaPayment,
   isCreditoParcelamento,
+  isSaldoAnteriorFatura,
   type SkippedLine,
   type ClassifiedTransaction,
   type CsvLineLogEntry,
@@ -648,6 +649,10 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
         pessoa: t.pessoa,
         codigo_cartao: t.codigo_cartao,
         valor_dolar: t.valor_dolar,
+        // "Saldo anterior da fatura" é artefato de rollover (não é gasto novo):
+        // marca ignorar_dashboard pra não inflar despesa do mês em Dashboard/
+        // Análises/Planejamento. A fatura acumulada já o ignora explicitamente.
+        ignorar_dashboard: isSaldoAnteriorFatura(t.descricao) || undefined,
         _isOriginal: true,
       });
     }

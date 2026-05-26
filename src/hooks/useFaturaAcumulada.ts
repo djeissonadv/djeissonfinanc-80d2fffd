@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { isFaturaPayment, isDevolution } from '@/lib/csv-parser';
+import { isFaturaPayment, isDevolution, isSaldoAnteriorFatura } from '@/lib/csv-parser';
 import { fetchAllRows } from '@/lib/supabase-fetch';
 
 interface CardTxRow {
@@ -64,6 +64,11 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
         const byPeriod: Record<string, { despesas: number; pagamentos: number }> = {};
 
         for (const t of cardTxs) {
+          // "Saldo anterior da fatura" é artefato de rollover — este hook já
+          // acumula o saldo dos meses anteriores (saldoAnterior abaixo), então
+          // contar essa linha como despesa duplicaria o mês anterior inteiro.
+          if (isSaldoAnteriorFatura(t.descricao)) continue;
+
           const periodo = t.mes_competencia || t.data.substring(0, 7);
           if (!byPeriod[periodo]) byPeriod[periodo] = { despesas: 0, pagamentos: 0 };
 
