@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useState } from 'react';
-import { Plus, CreditCard, Banknote, DollarSign, CalendarDays, PenLine } from 'lucide-react';
+import { Plus, CreditCard, Banknote, DollarSign, CalendarDays, PenLine, Trash2 } from 'lucide-react';
+import { ConfirmDelete } from '@/components/ConfirmDelete';
 import { PaymentModal } from '@/components/contas/PaymentModal';
 import { ManualTransactionModal } from '@/components/contas/ManualTransactionModal';
 import { MonthSelector } from '@/components/MonthSelector';
@@ -119,6 +120,39 @@ export default function ContasPage() {
       setDialogOpen(false);
       resetForm();
       toast({ title: editConta ? 'Conta atualizada' : 'Conta criada' });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!editConta) return;
+      // Apaga as transações da conta primeiro (evita órfãs / violação de FK),
+      // depois a própria conta. Ação destrutiva — protegida por ConfirmDelete.
+      const { error: txErr } = await supabase
+        .from('transacoes')
+        .delete()
+        .eq('user_id', user!.id)
+        .eq('conta_id', editConta.id);
+      if (txErr) throw txErr;
+      const { error: cErr } = await supabase
+        .from('contas')
+        .delete()
+        .eq('user_id', user!.id)
+        .eq('id', editConta.id);
+      if (cErr) throw cErr;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contas'] });
+      queryClient.invalidateQueries({ queryKey: ['saldos'] });
+      queryClient.invalidateQueries({ queryKey: ['faturas'] });
+      queryClient.invalidateQueries({ queryKey: ['fatura-acumulada'] });
+      queryClient.invalidateQueries({ queryKey: ['transacoes'] });
+      setDialogOpen(false);
+      resetForm();
+      toast({ title: 'Conta excluída', description: 'A conta e suas transações foram removidas.' });
+    },
+    onError: (err: any) => {
+      toast({ title: 'Erro ao excluir', description: err?.message || 'Tente novamente.', variant: 'destructive' });
     },
   });
 
@@ -341,6 +375,20 @@ export default function ContasPage() {
             <Button className="w-full" type="submit" disabled={!nome}>
               {editConta ? 'Salvar' : 'Criar'}
             </Button>
+            {editConta && (
+              <ConfirmDelete
+                onConfirm={() => deleteMutation.mutate()}
+                title={`Excluir "${editConta.nome}"?`}
+                description="A conta/cartão e TODAS as transações ligadas a ela serão apagadas permanentemente. Esta ação não pode ser desfeita."
+                confirmLabel="Excluir conta"
+                trigger={
+                  <Button type="button" variant="outline" className="w-full text-destructive hover:text-destructive" disabled={deleteMutation.isPending}>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Excluir conta
+                  </Button>
+                }
+              />
+            )}
           </form>
         </DialogContent>
       </Dialog>
