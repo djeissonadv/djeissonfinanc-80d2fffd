@@ -156,16 +156,30 @@ export default function ConciliacaoPage() {
         .update({ ignorar_dashboard: true, categoria: 'Pagamento Fatura' })
         .eq('id', payId).eq('user_id', user!.id);
       if (e1) throw e1;
-      // 2) baixa no cartão (receita que abate a fatura do período)
-      const baseDate = `${period}-01`;
-      const hash = generateHash(baseDate, `Pag Fat Deb Cc - ${cardNome}`, valor, 'Conciliacao') + '_conc';
-      const { error: e2 } = await supabase.from('transacoes').insert({
-        user_id: user!.id, conta_id: cardId, data: baseDate, mes_competencia: period,
-        descricao: `Pag Fat Deb Cc - ${cardNome}`, valor, categoria: 'Pagamento Fatura',
-        tipo: 'receita', essencial: true, ignorar_dashboard: true, hash_transacao: hash,
-        pessoa: user?.user_metadata?.full_name || 'Titular',
-      });
-      if (e2) throw e2;
+
+      // 2) baixa no cartão — SÓ se a fatura ainda não estiver coberta. Muitas
+      // faturas (Sicredi/Nubank) já trazem a linha de pagamento no próprio extrato;
+      // criar outra aqui pagaria em DOBRO (foi o que zerou/negativou o Black).
+      const cardTxs = (txs || []).filter((t) => t.conta_id === cardId && (t.mes_competencia || t.data.substring(0, 7)) === period);
+      const compras = cardTxs
+        .filter((t) => t.tipo === 'despesa' && !isFaturaPayment(t.descricao) && !isSaldoAnteriorFatura(t.descricao))
+        .reduce((s, t) => s + Number(t.valor), 0)
+        - cardTxs.filter((t) => isDevolution(t.descricao) && t.tipo === 'receita').reduce((s, t) => s + Math.abs(Number(t.valor)), 0);
+      const pagoExistente = cardTxs.filter((t) => isFaturaPayment(t.descricao)).reduce((s, t) => s + Math.abs(Number(t.valor)), 0);
+      const falta = compras - pagoExistente; // quanto ainda falta pagar nessa fatura
+      const aBaixar = Math.min(Number(valor), falta);
+
+      if (aBaixar > 0.5) {
+        const baseDate = `${period}-01`;
+        const hash = generateHash(baseDate, `Pag Fat Deb Cc - ${cardNome}`, aBaixar, 'Conciliacao') + '_conc';
+        const { error: e2 } = await supabase.from('transacoes').insert({
+          user_id: user!.id, conta_id: cardId, data: baseDate, mes_competencia: period,
+          descricao: `Pag Fat Deb Cc - ${cardNome}`, valor: aBaixar, categoria: 'Pagamento Fatura',
+          tipo: 'receita', essencial: true, ignorar_dashboard: true, hash_transacao: hash,
+          pessoa: user?.user_metadata?.full_name || 'Titular',
+        });
+        if (e2) throw e2;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conciliacao-txs'] });
@@ -173,7 +187,7 @@ export default function ConciliacaoPage() {
       queryClient.invalidateQueries({ queryKey: ['saldos'] });
       queryClient.invalidateQueries({ queryKey: ['fatura-acumulada'] });
       queryClient.invalidateQueries({ queryKey: ['faturas'] });
-      toast({ title: 'Fatura conciliada', description: 'Marcada como paga e o débito virou transferência no extrato.' });
+      toast({ title: 'Fatura conciliada', description: 'O débito virou transferência. A baixa no cartão só é criada se a fatura ainda não estava paga (evita pagar em dobro).' });
     },
     onError: (e: any) => toast({ title: 'Erro ao conciliar', description: e?.message, variant: 'destructive' }),
   });
@@ -229,11 +243,33 @@ export default function ConciliacaoPage() {
         }
       }
 
-      return { conta: c, saldo, duplicatas, pagamentosDup, meses, buracos, total: list.length };
+      // Faturas pagas em EXCESSO (cartão): período onde os pagamentos somam mais
+      // que as compras — sinal de pagamento em dobro (ex: linha do extrato + baixa
+      // da conciliação). Lista os pagamentos do período pra você remover o extra.
+      const faturasExcesso: { periodo: string; compras: number; pago: number; pagamentos: Tx[] }[] = [];
+      if (c.tipo === 'credito') {
+        const perMap: Record<string, { compras: number; pago: number; pagamentos: Tx[] }> = {};
+        for (const t of list) {
+          if (isSaldoAnteriorFatura(t.descricao)) continue;
+          const p = t.mes_competencia || t.data.substring(0, 7);
+          perMap[p] ||= { compras: 0, pago: 0, pagamentos: [] };
+          if (isFaturaPayment(t.descricao)) { perMap[p].pago += Math.abs(Number(t.valor)); perMap[p].pagamentos.push(t); }
+          else if (t.tipo === 'despesa') perMap[p].compras += Number(t.valor);
+          else if (isDevolution(t.descricao) && t.tipo === 'receita') perMap[p].compras -= Math.abs(Number(t.valor));
+        }
+        for (const [periodo, v] of Object.entries(perMap)) {
+          if (v.pago > v.compras + 0.5 && v.pagamentos.length > 0) {
+            faturasExcesso.push({ periodo, compras: v.compras, pago: v.pago, pagamentos: v.pagamentos });
+          }
+        }
+        faturasExcesso.sort((a, b) => a.periodo.localeCompare(b.periodo));
+      }
+
+      return { conta: c, saldo, duplicatas, pagamentosDup, faturasExcesso, meses, buracos, total: list.length };
     });
   }, [contas, txs, todayIso]);
 
-  const totalDup = analise.reduce((s, a) => s + a.duplicatas.length + a.pagamentosDup.length, 0);
+  const totalDup = analise.reduce((s, a) => s + a.duplicatas.length + a.pagamentosDup.length + a.faturasExcesso.length, 0);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -304,8 +340,8 @@ export default function ConciliacaoPage() {
         </Card>
       )}
 
-      {analise.map(({ conta, saldo, duplicatas, pagamentosDup, meses, buracos, total }) => {
-        const semProblema = duplicatas.length === 0 && pagamentosDup.length === 0;
+      {analise.map(({ conta, saldo, duplicatas, pagamentosDup, faturasExcesso, meses, buracos, total }) => {
+        const semProblema = duplicatas.length === 0 && pagamentosDup.length === 0 && faturasExcesso.length === 0;
         return (
           <Card key={conta.id}>
             <CardHeader className="pb-3">
@@ -384,6 +420,38 @@ export default function ConciliacaoPage() {
                           </Button>
                         }
                       />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Faturas pagas em excesso (pago > compras) — pagamento em dobro */}
+              {faturasExcesso.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-destructive">
+                    {faturasExcesso.length} fatura(s) paga(s) em excesso (pagamento em dobro)
+                  </p>
+                  {faturasExcesso.map((f) => (
+                    <div key={f.periodo} className="rounded border p-2 space-y-1">
+                      <p className="text-xs text-muted-foreground">
+                        {compLabel(f.periodo)} — compras {formatCurrency(f.compras)} · pago <span className="text-destructive font-medium">{formatCurrency(f.pago)}</span>
+                      </p>
+                      {f.pagamentos.map((t) => (
+                        <div key={t.id} className="flex items-center justify-between text-xs pl-2">
+                          <span className="truncate">{t.data} · {t.descricao.slice(0, 36)} · {formatCurrency(Number(t.valor))}</span>
+                          <ConfirmDelete
+                            onConfirm={() => removeMutation.mutate([t.id])}
+                            title="Remover este pagamento?"
+                            description="Remove esta baixa de fatura (use para apagar o pagamento duplicado). Não pode ser desfeito."
+                            confirmLabel="Remover"
+                            trigger={
+                              <Button size="sm" variant="ghost" className="text-destructive shrink-0 h-7">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            }
+                          />
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
