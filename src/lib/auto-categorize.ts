@@ -47,10 +47,10 @@ const RULES: CategoriaRule[] = [
   { patterns: ['CONTA VIVO', 'COPREL TELECOM', 'VIVO', 'CLARO TELECOM', 'TIM CELULAR', 'TIM S.A', 'TIM SA', 'TIM *'], categoria: 'Serviços' },
 
   // SAÚDE
-  { patterns: ['FARMACIA', 'FARMACIAS', 'SAO JOAO FARMACIAS', 'DROGARIA', 'CONSULTORIO', 'DR FBS', 'ROSELI MAGALHAES'], categoria: 'Saúde' },
+  { patterns: ['FARMACIA', 'FARMACIAS', 'SAO JOAO FARMACIAS', 'PANVEL', 'DROGARIA', 'CONSULTORIO', 'DR FBS', 'ROSELI MAGALHAES', 'CARTAO DE TODOS', 'CARTAODETODO', 'NATUPHARMA'], categoria: 'Saúde' },
 
   // BELEZA
-  { patterns: ['OBOTICARIO', 'HNA*OBOTICARIO', 'HNAOBOTICARIO', 'LETICIA MUNIZ', 'NH COMERCIO COSM', 'BEAUTY', 'ESTETICA'], categoria: 'Beleza' },
+  { patterns: ['OBOTICARIO', 'HNA*OBOTICARIO', 'HNAOBOTICARIO', 'LETICIA MUNIZ', 'NH COMERCIO COSM', 'BEAUTY', 'ESTETICA', 'BARBEARIA', 'DECADA BARBEARIA'], categoria: 'Beleza' },
 
   // MORADIA → Casa
   { patterns: ['CEOLIN ADMINISTRACAO', 'RESIDENCIAL PORTO SEGURO', 'ZOOP BRASIL', 'CONDOMINIO', 'ALUGUEL'], categoria: 'Casa' },
@@ -58,17 +58,14 @@ const RULES: CategoriaRule[] = [
   // COMBUSTÍVEL → Transporte
   { patterns: ['PF CIDADE NOVA'], categoria: 'Transporte' },
 
-  // TRANSPORTE
-  { patterns: ['PASSAGEM PEDAGIO', 'PEDAGIO', 'MENSALID TAG DE PASSAGEM', 'LAPAZA EMPREEND'], categoria: 'Transporte' },
+  // TRANSPORTE (apps, oficina, peças, combustível, lava-jato)
+  { patterns: ['PASSAGEM PEDAGIO', 'PEDAGIO', 'MENSALID TAG DE PASSAGEM', 'LAPAZA EMPREEND', '99APP', 'UBER', 'MECANICA', 'AUTO PECAS', 'ABASTECEDORA', 'CAR WASH', 'LAVA JATO', 'POSTO ', 'TAURA AUTO'], categoria: 'Transporte' },
 
   // COMPRAS (online)
   { patterns: ['MERCADOLIVRE', 'MERCADO*MERCAD', 'MERCADOMERCAD', 'MERCADO*RICO', 'MERCADORICO', 'MERCADO*15PROD', 'MERCADO15PROD', 'SHOPEE', 'HAVAN', 'SHEIN', 'SITE HAVAN', 'COMAXCASA', 'MERLIN MAT', 'NOVACOR', 'NOVA COR'], categoria: 'Compras' },
 
-  // CASA
-  { patterns: ['TOP MAIS', 'STOK CENTER'], categoria: 'Casa' },
-
-  // ALIMENTAÇÃO
-  { patterns: ['MIX CENTER', 'FRUTEIRA TERRIBILE', 'COTRISAL SUPERMERCADO', '212 BISTRO', 'QUIERO CAFE', 'SUPERMERCADO'], categoria: 'Alimentação' },
+  // ALIMENTAÇÃO (mercado/atacarejo, restaurantes, delivery, padaria)
+  { patterns: ['MIX CENTER', 'FRUTEIRA TERRIBILE', 'COTRISAL SUPERMERCADO', 'SUPERMERCADO', 'STOK CENTER', 'TOP MAIS', 'MINIMARKET', 'MERCADO MOY', 'DOCE MANIA', '212 BISTRO', 'QUESTO GASTRONOMIA', 'IFOOD', 'IFD*', 'CAFE PREMIUM', 'DONA AUGUSTA', 'AMO RESTAURANTE', 'QUIERO CAFE', 'PADARIA'], categoria: 'Alimentação' },
 
   // RECEITA → Outras receitas (catch-all)
   { patterns: ['RECEBIMENTO PIX', 'PIX SICREDI', 'ADVERSE PRODUTORA', 'VERTATTO NEGOCIOS'], categoria: 'Outras receitas' },
