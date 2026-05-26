@@ -102,23 +102,40 @@ export default function ConciliacaoPage() {
       const cur = fatura[cardId][period] || { despesas: 0, pagamentos: 0 };
       return ant + cur.despesas - cur.pagamentos;
     };
-    const openByCard: Record<string, string[]> = {};
-    for (const c of cards) openByCard[c.id] = Object.keys(fatura[c.id]).filter((p) => totalAPagar(c.id, p) > 0.01).sort();
+    // TODOS os meses do cartão que têm lançamento (não só os "em aberto") —
+    // ordenados do mais recente pro mais antigo. Assim você sempre pode escolher
+    // o mês certo (ex: janeiro), mesmo que a fatura já apareça zerada.
+    const periodsByCard: Record<string, string[]> = {};
+    for (const c of cards) {
+      periodsByCard[c.id] = Object.keys(fatura[c.id])
+        .filter((p) => Math.abs(fatura[c.id][p].despesas) > 0.01 || Math.abs(fatura[c.id][p].pagamentos) > 0.01)
+        .sort()
+        .reverse();
+    }
 
     const pagamentos = txs
       .filter((t) => debitIds.has(t.conta_id) && t.tipo === 'despesa' && isFaturaPayment(t.descricao) && !t.ignorar_dashboard)
       .map((pay) => {
+        const payMonth = (pay.data || '').substring(0, 7);
+        // Match: prioriza o cartão+mês cujo total bate por VALOR (±1), preferindo
+        // o mês DO PAGAMENTO (você paga a fatura no mês do débito) e o mês anterior.
         let match: { cardId: string; period: string } | null = null;
+        const prefer = (p: string) => (p === payMonth ? 0 : p < payMonth ? 1 : 2); // mês do pgto > anteriores > futuros
         for (const c of cards) {
-          for (const p of openByCard[c.id]) {
-            if (Math.abs(totalAPagar(c.id, p) - Number(pay.valor)) <= 1) { match = { cardId: c.id, period: p }; break; }
-          }
-          if (match) break;
+          const cands = periodsByCard[c.id]
+            .filter((p) => Math.abs(totalAPagar(c.id, p) - Number(pay.valor)) <= 1)
+            .sort((a, b) => prefer(a) - prefer(b) || b.localeCompare(a));
+          if (cands.length) { match = { cardId: c.id, period: cands[0] }; break; }
         }
-        return { pay, contaNome: contas.find((c) => c.id === pay.conta_id)?.nome || '', match, totalAPagar };
+        // default do mês: o mês do pagamento, se o cartão tiver lançamento nele.
+        const defaultPeriod = match
+          ? (periodsByCard[match.cardId].includes(payMonth) ? payMonth : match.period)
+          : '';
+        const defaultMatch = match ? { cardId: match.cardId, period: defaultPeriod } : null;
+        return { pay, contaNome: contas.find((c) => c.id === pay.conta_id)?.nome || '', match: defaultMatch };
       });
 
-    return { pagamentos, cards, openByCard };
+    return { pagamentos, cards, periodsByCard };
   }, [contas, txs]);
 
   const conciliarMutation = useMutation({
@@ -232,7 +249,7 @@ export default function ConciliacaoPage() {
             </p>
             {conc.pagamentos.map(({ pay, contaNome, match }) => {
               const escolha = sel[pay.id] || (match ? { cardId: match.cardId, period: match.period } : { cardId: '', period: '' });
-              const periods = escolha.cardId ? (conc.openByCard[escolha.cardId] || []) : [];
+              const periods = escolha.cardId ? (conc.periodsByCard[escolha.cardId] || []) : [];
               return (
                 <div key={pay.id} className="rounded-lg border p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2">
