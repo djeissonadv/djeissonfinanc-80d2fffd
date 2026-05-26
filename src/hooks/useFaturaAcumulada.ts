@@ -2,6 +2,16 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { isFaturaPayment, isDevolution } from '@/lib/csv-parser';
+import { fetchAllRows } from '@/lib/supabase-fetch';
+
+interface CardTxRow {
+  conta_id: string;
+  tipo: string;
+  valor: number;
+  descricao: string;
+  data: string;
+  mes_competencia: string | null;
+}
 
 interface FaturaMes {
   periodo: string; // YYYY-MM
@@ -34,12 +44,15 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
 
       // Fetch ALL transactions for these cards (including ignorar_dashboard
       // since fatura payments are marked as internal transfers but still
-      // need to be counted for card balance calculation)
-      const { data: allTxs } = await supabase
+      // need to be counted for card balance calculation).
+      // Pagina além do limite de 1000 do PostgREST: este é o histórico ALL-TIME
+      // do cartão (necessário pro rollover de saldoAnterior), logo é justamente a
+      // query com maior chance de estourar 1000 linhas e truncar o saldo devido.
+      const allTxs = await fetchAllRows<CardTxRow>(() => supabase
         .from('transacoes')
         .select('conta_id, tipo, valor, descricao, data, mes_competencia')
         .eq('user_id', user!.id)
-        .in('conta_id', cardIds);
+        .in('conta_id', cardIds));
 
       const result: Record<string, FaturaAcumulada> = {};
 

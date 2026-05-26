@@ -176,7 +176,7 @@ function parseDate(dateStr: string): string {
   return dateStr;
 }
 
-function parseValue(valorStr: string): number | null {
+export function parseValue(valorStr: string): number | null {
   // Handle quoted values like "R$ 22,90" or "R$ -7.038,96"
   let clean = valorStr
     .replace(/"/g, '')
@@ -190,6 +190,19 @@ function parseValue(valorStr: string): number | null {
     clean = clean.replace(/\./g, '').replace(',', '.');
   } else if (clean.includes(',')) {
     clean = clean.replace(',', '.');
+  } else if (clean.includes('.')) {
+    // Ponto sozinho é AMBÍGUO: "12.34" (decimal US) vs "1.500" (milhar BR).
+    // Em valores monetários o decimal sempre tem 2 casas; um ponto seguido de
+    // exatamente 3 dígitos (e que não seja a única parte) é separador de milhar.
+    // Vários pontos (1.234.567) também são milhar. Assim "1.500" → 1500 (e não 1.5),
+    // enquanto "12.34" e "150.00" continuam decimais.
+    const semSinal = clean.replace(/^-/, '');
+    const partes = semSinal.split('.');
+    const ultima = partes[partes.length - 1];
+    const ehMilhar = partes.length > 2 || (partes.length === 2 && ultima.length === 3 && partes[0].length >= 1);
+    if (ehMilhar) {
+      clean = clean.replace(/\./g, '');
+    }
   }
 
   const val = parseFloat(clean);

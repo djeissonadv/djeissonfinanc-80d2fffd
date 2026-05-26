@@ -1,5 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { parseSicrediCSV, normalizeDescription } from '@/lib/csv-parser';
+import { parseSicrediCSV, normalizeDescription, parseValue } from '@/lib/csv-parser';
+
+describe('parseValue — formatos de número monetário', () => {
+  it('formato BR com milhar e decimal: 7.038,96 → 7038.96', () => {
+    expect(parseValue('R$ 7.038,96')).toBe(7038.96);
+  });
+  it('negativo BR: -7.038,96 → -7038.96', () => {
+    expect(parseValue('R$ -7.038,96')).toBe(-7038.96);
+  });
+  it('só vírgula decimal: 22,90 → 22.9', () => {
+    expect(parseValue('R$ 22,90')).toBe(22.9);
+  });
+  it('decimal US com 2 casas (ponto): 150.00 → 150', () => {
+    expect(parseValue('150.00')).toBe(150);
+  });
+  it('decimal com 2 casas (ponto): 12.34 → 12.34', () => {
+    expect(parseValue('12.34')).toBe(12.34);
+  });
+  // Regressão do bug: ponto solitário com 3 dígitos é MILHAR no padrão BR,
+  // não decimal. "1.500" deve ser 1500, e não 1.5.
+  it('ponto solitário com 3 dígitos é milhar: 1.500 → 1500', () => {
+    expect(parseValue('R$ 1.500')).toBe(1500);
+  });
+  it('ponto solitário com 3 dígitos é milhar: 12.345 → 12345', () => {
+    expect(parseValue('12.345')).toBe(12345);
+  });
+  it('milhar negativo: -1.500 → -1500', () => {
+    expect(parseValue('-1.500')).toBe(-1500);
+  });
+  it('múltiplos pontos são milhar: 1.234.567 → 1234567', () => {
+    expect(parseValue('1.234.567')).toBe(1234567);
+  });
+  it('valor inválido retorna null', () => {
+    expect(parseValue('abc')).toBeNull();
+  });
+});
 
 describe('parseSicrediCSV', () => {
   it('importa devolução como receita (refund) com valor 718.80', () => {

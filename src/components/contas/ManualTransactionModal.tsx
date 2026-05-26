@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { generateHash } from '@/lib/csv-parser';
 import { autoCategorizarTransacao } from '@/lib/auto-categorize';
+import { toLocalIso } from '@/lib/format';
 
 interface Props {
   open: boolean;
@@ -33,7 +34,10 @@ export function ManualTransactionModal({
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
   const [tipo, setTipo] = useState<'despesa' | 'receita'>(defaultTipo || 'despesa');
-  const [data, setData] = useState(new Date().toISOString().substring(0, 10));
+  // toLocalIso (não toISOString): no fuso BR, à noite o toISOString() avança pro
+  // dia seguinte, defaultando a data pra "amanhã" e deixando a transação fora do
+  // saldo (que filtra <= hoje) até a data chegar.
+  const [data, setData] = useState(toLocalIso(new Date()));
   const [essencial, setEssencial] = useState(false);
   const [selectedContaId, setSelectedContaId] = useState<string>(contaId || '');
   const [recorrente, setRecorrente] = useState(false);

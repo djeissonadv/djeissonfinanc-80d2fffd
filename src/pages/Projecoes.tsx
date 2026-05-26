@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency, getMonthName } from '@/lib/format';
 import { generateProjections, type MonthProjection } from '@/lib/projection-engine';
+import { fetchAllRows } from '@/lib/supabase-fetch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -51,12 +52,12 @@ export default function ProjecoesPage() {
   const { data: transactions, isLoading: loadingTx } = useQuery({
     queryKey: ['projecoes-transacoes', user?.id],
     queryFn: async () => {
-      const { data } = await supabase
+      const data = await fetchAllRows(() => supabase
         .from('transacoes')
         .select('data, descricao, valor, tipo, categoria, categoria_id, parcela_atual, parcela_total, grupo_parcela, ignorar_dashboard, essencial, conta_id')
         .eq('user_id', user!.id)
-        .gte('data', `${new Date().getFullYear() - 1}-01-01`);
-      return data || [];
+        .gte('data', `${new Date().getFullYear() - 1}-01-01`));
+      return data;
     },
     enabled: !!user,
   });

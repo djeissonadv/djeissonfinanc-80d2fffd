@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { MonthSelector } from '@/components/MonthSelector';
-import { formatCurrency, getMonthName } from '@/lib/format';
+import { formatCurrency, getMonthName, toLocalIso, getMonthRange } from '@/lib/format';
 import { fetchAllRows } from '@/lib/supabase-fetch';
 import { ConfirmDelete } from '@/components/ConfirmDelete';
 import { BudgetReviewCard } from '@/components/planejamento/BudgetReviewCard';
@@ -40,12 +40,15 @@ export default function PlanejamentoPage() {
   const queryClient = useQueryClient();
 
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  // Fuso BR (UTC-3): usar toLocalIso/getMonthRange em vez de toISOString(), que
+  // converte pra UTC e desloca o dia ±1 perto da meia-noite — corrompendo o
+  // saldo (lte 'data') e o range do mês.
+  const todayStr = toLocalIso(now);
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
   const billingMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
   const startDate = `${billingMonth}-01`;
-  const endDate = new Date(year, month + 1, 0).toISOString().slice(0, 10);
+  const endDate = getMonthRange(month, year).end;
   const isFutureMonth = billingMonth > todayStr.slice(0, 7);
 
   const [editingMetas, setEditingMetas] = useState<Record<string, string>>({});

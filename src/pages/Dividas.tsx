@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { formatCurrency, getMonthName } from '@/lib/format';
+import { formatCurrency, getMonthName, toLocalIso } from '@/lib/format';
+import { fetchAllRows } from '@/lib/supabase-fetch';
 import { useFontesReceita } from '@/hooks/useFontesReceita';
 import { buildDebtPlan, jurosEvitadosQuitando, type DebtItem } from '@/lib/debt-strategy';
 import { DebtStrategyCard } from '@/components/dividas/DebtStrategyCard';
@@ -153,23 +154,22 @@ function cleanName(desc: string): string {
 export default function DividasPage() {
   const { user } = useAuth();
   const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
+  const todayStr = toLocalIso(today);
   const currentYYYYMM = todayStr.slice(0, 7);
 
   // ── 1. Future loan installments (categoria=Empréstimos, data >= today, mes_competencia IS NULL)
   const { data: futureInstallments, isLoading: loadingFuture } = useQuery({
     queryKey: ['dividas-future', user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const data = await fetchAllRows<Transacao>(() => supabase
         .from('transacoes')
         .select('id, descricao, valor, tipo, data, conta_id, hash_transacao, parcela_atual, parcela_total, categoria, grupo_parcela, mes_competencia')
         .eq('user_id', user!.id)
         .eq('categoria', 'Empréstimos')
         .is('mes_competencia', null)
         .gte('data', todayStr)
-        .order('data', { ascending: true });
-      if (error) throw error;
-      return (data || []) as Transacao[];
+        .order('data', { ascending: true }));
+      return data;
     },
     enabled: !!user,
   });
@@ -178,15 +178,14 @@ export default function DividasPage() {
   const { data: parcelamentosTx, isLoading: loadingParc } = useQuery({
     queryKey: ['dividas-parcelamentos', user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const data = await fetchAllRows<Transacao>(() => supabase
         .from('transacoes')
         .select('id, descricao, valor, tipo, parcela_atual, parcela_total, grupo_parcela, mes_competencia, data, categoria, conta_id, hash_transacao')
         .eq('user_id', user!.id)
         .eq('tipo', 'despesa')
         .not('parcela_total', 'is', null)
-        .gt('parcela_total', 1);
-      if (error) throw error;
-      return (data || []) as Transacao[];
+        .gt('parcela_total', 1));
+      return data;
     },
     enabled: !!user,
   });
