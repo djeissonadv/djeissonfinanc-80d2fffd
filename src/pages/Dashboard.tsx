@@ -204,8 +204,12 @@ export default function DashboardPage() {
   const totalAPagar = (contasPR || []).filter((c: any) => c.tipo === 'pagar').reduce((s: number, c: any) => s + Number(c.valor), 0);
   const totalAReceber = (contasPR || []).filter((c: any) => c.tipo === 'receber').reduce((s: number, c: any) => s + Number(c.valor), 0);
 
-  // Disponível = saldo anterior + receitas + a receber - despesas - a pagar
-  const disponivel = (saldoAnterior || 0) + totalReceitas + totalAReceber - totalDespesas - totalAPagar;
+  // Disponível no mês = saldo anterior + receitas REALIZADAS - despesas REALIZADAS.
+  // MESMA definição da página Análises (antes o Dashboard somava a receber e
+  // subtraía a pagar, dando um número diferente sob o mesmo rótulo). "A pagar"/"a
+  // receber" continuam como contexto informativo no subtítulo, mas não entram no
+  // headline — "disponível" é o que já se realizou, não a projeção de fim de mês.
+  const disponivel = (saldoAnterior || 0) + totalReceitas - totalDespesas;
   const percentGasto = totalReceitas > 0 ? (totalDespesas / totalReceitas) * 100 : (totalDespesas > 0 ? 100 : 0);
 
   const categorias = transacoesMes

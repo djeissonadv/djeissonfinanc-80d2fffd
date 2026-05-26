@@ -165,12 +165,21 @@ export function ViabilidadeTab({ params, onChange }: Props) {
             <StatRow label="Valor de venda" value={formatCurrency(params.valorVendaImovel)} />
             <StatRow label="(−) Saldo devedor + IPTU + IR + custos" value={`- ${formatCurrency(params.saldoDevedorImovelVender + params.iptuAtrasado + params.irVendaEstimado + params.outrosCustosVenda)}`} className="text-destructive" />
             <div className="border-t pt-1 mt-1">
-              <StatRow label="Líquido da venda" value={formatCurrency(v.liquidoVenda)} className="font-bold" />
+              <StatRow label="Líquido da venda" value={formatCurrency(v.liquidoVenda)} className={`font-bold ${v.liquidoVenda < 0 ? 'text-destructive' : ''}`} />
               <StatRow label="+ FGTS" value={formatCurrency(params.fgtsDisponivel)} />
               <StatRow label="+ Outras reservas" value={formatCurrency(params.capitalDisponivel)} />
-              <StatRow label="= Capital para a compra" value={formatCurrency(v.capitalParaCompra)} className="font-bold text-primary text-base" />
+              <StatRow label="= Capital para a compra" value={formatCurrency(v.capitalParaCompra)} className={`font-bold text-base ${v.capitalParaCompra < 0 ? 'text-destructive' : 'text-primary'}`} />
             </div>
           </div>
+          {v.temVenda && v.liquidoVenda < 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-2.5 text-xs">
+              <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+              <p className="text-muted-foreground">
+                <span className="font-medium text-destructive">Venda no negativo.</span> Os custos da venda (saldo devedor + IPTU + IR + corretagem) superam o valor de venda
+                em {formatCurrency(Math.abs(v.liquidoVenda))}. Em vez de gerar capital para a compra, a venda exige dinheiro do bolso — considere quitar parte do saldo devedor antes ou renegociar o valor.
+              </p>
+            </div>
+          )}
           {v.temVenda && (params.irVendaEstimado > 0 || params.saldoDevedorImovelVender > 0) && (
             <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs">
               <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />

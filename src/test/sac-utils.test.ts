@@ -119,6 +119,22 @@ describe('calcViabilidade — venda do imóvel e capital para compra', () => {
     expect(r.capitalParaCompra).toBeCloseTo(210000, 6);
   });
 
+  it('venda subaquática: líquido NEGATIVO quando custos superam o valor de venda', () => {
+    const r = calcViabilidade({
+      ...base,
+      valorVendaImovel: 200000,
+      saldoDevedorImovelVender: 180000,
+      iptuAtrasado: 10000,
+      irVendaEstimado: 8000,
+      outrosCustosVenda: 12000,
+      fgtsDisponivel: 0,
+    });
+    // 200000 - 180000 - 10000 - 8000 - 12000 = -10000 (sai devendo)
+    expect(r.liquidoVenda).toBeCloseTo(-10000, 6);
+    // o déficit reduz o capital disponível para a compra
+    expect(r.capitalParaCompra).toBeCloseTo(-10000, 6);
+  });
+
   it('parcela SAC inicial maior que a última (decrescente)', () => {
     const r = calcViabilidade(base);
     expect(r.parcelaMes1).toBeGreaterThan(r.parcelaUltima);

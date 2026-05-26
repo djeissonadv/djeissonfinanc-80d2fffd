@@ -192,10 +192,12 @@ export function calcViabilidade(p: SacParams): ViabilidadeResult {
   // Líquido = valor de venda menos o que precisa ser pago na transação
   // (saldo devedor a quitar, IPTU atrasado, IR sobre ganho de capital, outros custos).
   const temVenda = p.valorVendaImovel > 0;
-  const liquidoVenda = Math.max(
-    0,
-    p.valorVendaImovel - p.saldoDevedorImovelVender - p.iptuAtrasado - p.irVendaEstimado - p.outrosCustosVenda,
-  );
+  // NÃO piso em 0: se os custos da venda (saldo devedor + IPTU + IR + outros)
+  // superarem o valor de venda, o líquido é NEGATIVO — o usuário sai devendo e
+  // precisa pôr dinheiro do bolso na transação. Floorar em 0 escondia esse
+  // déficit e deixava capitalParaCompra/checkCapital otimistas demais.
+  const liquidoVenda =
+    p.valorVendaImovel - p.saldoDevedorImovelVender - p.iptuAtrasado - p.irVendaEstimado - p.outrosCustosVenda;
   // Capital total disponível para a compra = líquido da venda + FGTS + outras reservas.
   const capitalParaCompra = liquidoVenda + p.fgtsDisponivel + p.capitalDisponivel;
 
