@@ -853,11 +853,32 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       transactions: [t],
     }));
 
+    // Reflete o DEDUP no preview: só conta como "nova" o que de fato será inserido
+    // (hash presente em newTransactions, que já passou pelo detectConflicts). Sem
+    // isso o preview somava os baldes CRUS do arquivo e mostrava tudo como novo
+    // mesmo quando já existia — o caso do reimport da conta corrente.
+    const importedHashes = new Set(
+      newTransactions.filter((t: any) => t._isOriginal).map((t: any) => t.hash_transacao),
+    );
+    const keepNew = <T extends { hash_transacao?: string }>(arr: T[]) =>
+      arr.filter((t) => t.hash_transacao && importedHashes.has(t.hash_transacao));
+
+    const simpleNew = keepNew(simpleRaw);
+    const refundNew = keepNew(refundRaw);
+    const ongoingNew = keepNew(ongoingUnique);
+    const installmentGroupsNew = installmentGroups.filter((g) =>
+      (g.transactions || []).some((t) => t.hash_transacao && importedHashes.has(t.hash_transacao)),
+    );
+    const dedupRemoved =
+      (simpleRaw.length - simpleNew.length) +
+      (refundRaw.length - refundNew.length) +
+      (ongoingUnique.length - ongoingNew.length);
+
     const previewData: ImportPreviewData = {
-      simpleTransactions: simpleRaw,
-      refunds: refundRaw,
-      newInstallments: installmentGroups,
-      ongoingInstallments: ongoingUnique,
+      simpleTransactions: simpleNew,
+      refunds: refundNew,
+      newInstallments: installmentGroupsNew,
+      ongoingInstallments: ongoingNew,
       duplicateInstallments: ongoingDuplicates,
       payments: paymentRaw,
       rejectedLines: parsedSkippedLines.map((s) => ({
@@ -867,6 +888,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       })),
       totalLines: parsedTotalLines,
       fileName: file?.name || "arquivo.csv",
+      duplicateCount: dedupRemoved,
     };
 
     const contaNome = contas.find((c) => c.id === contaId)?.nome || "";

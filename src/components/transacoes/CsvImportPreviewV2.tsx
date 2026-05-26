@@ -38,6 +38,9 @@ export interface ImportPreviewData {
   totalLines: number;
   /** Nome do arquivo */
   fileName: string;
+  /** Quantas transações foram reconhecidas como JÁ EXISTENTES (dedup) e por isso
+   *  não serão reimportadas. Reflete o resultado do detectConflicts no preview. */
+  duplicateCount?: number;
 }
 
 interface Props {
@@ -116,7 +119,8 @@ export function CsvImportPreviewV2({ data, onBack, onConfirm, confirming }: Prop
   );
 
   const totalIgnored =
-    data.payments.length + data.duplicateInstallments.length + data.rejectedLines.length;
+    data.payments.length + data.duplicateInstallments.length + data.rejectedLines.length +
+    (data.duplicateCount || 0);
 
   const monthlyImpact = data.newInstallments.reduce((sum, g) => sum + g.valorParcela, 0);
 
@@ -376,6 +380,16 @@ export function CsvImportPreviewV2({ data, onBack, onConfirm, confirming }: Prop
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <div className="divide-y">
+                    {(data.duplicateCount || 0) > 0 && (
+                      <div className="p-3">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Já existentes (não serão reimportadas): {data.duplicateCount}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Estas transações já estão na conta selecionada — o sistema reconheceu e vai pular.
+                        </p>
+                      </div>
+                    )}
                     {data.payments.length > 0 && (
                       <div className="p-3 space-y-2">
                         <p className="text-xs font-medium text-muted-foreground">
