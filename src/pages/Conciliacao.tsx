@@ -79,7 +79,7 @@ export default function ConciliacaoPage() {
   const [sel, setSel] = useState<Record<string, { cardId: string; period: string }>>({});
 
   const conc = useMemo(() => {
-    if (!contas || !txs) return { pagamentos: [] as any[], cards: [] as Conta[], openByCard: {} as Record<string, string[]> };
+    if (!contas || !txs) return { pagamentos: [] as any[], cards: [] as Conta[], periodsByCard: {} as Record<string, string[]> };
     const cards = contas.filter((c) => c.tipo === 'credito');
     const debitIds = new Set(contas.filter((c) => c.tipo === 'debito').map((c) => c.id));
 
@@ -262,7 +262,7 @@ export default function ConciliacaoPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Select
                       value={escolha.cardId}
-                      onValueChange={(v) => setSel((s) => ({ ...s, [pay.id]: { cardId: v, period: (conc.openByCard[v] || [])[0] || '' } }))}
+                      onValueChange={(v) => setSel((s) => ({ ...s, [pay.id]: { cardId: v, period: (conc.periodsByCard[v] || [])[0] || '' } }))}
                     >
                       <SelectTrigger className="h-8 w-[160px]"><SelectValue placeholder="Cartão" /></SelectTrigger>
                       <SelectContent>
