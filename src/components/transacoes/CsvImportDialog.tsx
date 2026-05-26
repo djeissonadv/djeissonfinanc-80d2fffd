@@ -596,8 +596,18 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
 
     setProgress(35);
 
-    // Build PlannedTransactions for importable items (simple + refunds + new_installment first parcela + ongoing unique)
-    const importableTransactions = [...simpleRaw, ...refundRaw, ...newInstallmentRaw, ...ongoingUnique];
+    // Build PlannedTransactions for importable items (simple + refunds + new_installment first parcela + ongoing unique).
+    // Em conta de DÉBITO (não cartão), os itens classificados como "payment" (ex: "PAGTO FATURA MASTER"
+    // no extrato da conta corrente) são SAÍDAS reais de caixa e precisam virar despesa normal — senão o
+    // saldo da conta fica errado. Em CARTÃO, esses pagamentos são tratados à parte (bloco abaixo, como
+    // receita ignorada que abate a fatura), então ficam de fora daqui.
+    const importableTransactions = [
+      ...simpleRaw,
+      ...refundRaw,
+      ...newInstallmentRaw,
+      ...ongoingUnique,
+      ...(isCredito ? [] : paymentRaw),
+    ];
     const allOriginals: PlannedTransaction[] = [];
 
     for (const t of importableTransactions) {
@@ -718,7 +728,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     // financiamento, não caixa). Guard anti-duplicata: pula se já existe um
     // pagamento (manual via "Pagar fatura" ou import anterior) no mesmo cartão +
     // período + valor próximo.
-    for (const pay of paymentRaw) {
+    for (const pay of (isCredito ? paymentRaw : [])) {
       if (!isFaturaPayment(pay.descricao) || isCreditoParcelamento(pay.descricao)) continue;
       const compet = (pay as any)._mes_competencia || null;
       const jaTem = existingTxs.some((e) =>
@@ -1160,7 +1170,17 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       queryClient.invalidateQueries({ queryKey: ["saldos"] });
     } catch (err) {
       console.error(err);
-      toast({ title: "Erro ao importar", variant: "destructive" });
+      const msg =
+        err instanceof Error
+          ? err.message
+          : typeof err === "object" && err !== null && "message" in err
+            ? String((err as any).message)
+            : String(err);
+      toast({
+        title: "Erro ao importar",
+        description: msg || "Erro desconhecido. Veja o console para detalhes.",
+        variant: "destructive",
+      });
     } finally {
       setImporting(false);
       setProgress(100);
