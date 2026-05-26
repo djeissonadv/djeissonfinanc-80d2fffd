@@ -85,6 +85,9 @@ interface PreparedImportPlan {
   autoProjectedIdsToDelete: string[];
   replacedTransactions: PlannedTransaction[];
   previewData: ImportPreviewData;
+  /** Aviso: transações deste arquivo que já existem em OUTRA conta (provável
+   *  conta errada selecionada). Lista os nomes das contas e a contagem. */
+  crossAccountWarning: { contas: string[]; count: number } | null;
 }
 
 const MONTH_NAMES = [
@@ -868,8 +871,35 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
 
     const contaNome = contas.find((c) => c.id === contaId)?.nome || "";
 
+    // Rede de segurança: detecta se estas transações já existem em OUTRA conta
+    // (sinal forte de conta errada selecionada — foi o caso do "Sicredi 0228" x
+    // "0258"). Busca os hashes do arquivo em contas != a selecionada.
+    let crossAccountWarning: { contas: string[]; count: number } | null = null;
+    try {
+      const hashes = allOriginals.map((t) => t.hash_transacao).filter(Boolean);
+      const outras = new Map<string, number>(); // conta_id -> count
+      for (let i = 0; i < hashes.length; i += 100) {
+        const chunk = hashes.slice(i, i + 100);
+        const { data } = await supabase
+          .from("transacoes")
+          .select("conta_id")
+          .eq("user_id", currentUserId)
+          .neq("conta_id", contaId)
+          .in("hash_transacao", chunk);
+        for (const row of data || []) outras.set(row.conta_id, (outras.get(row.conta_id) || 0) + 1);
+      }
+      if (outras.size > 0) {
+        const nomes = [...outras.keys()].map((id) => contas.find((c) => c.id === id)?.nome || id);
+        const count = [...outras.values()].reduce((a, b) => a + b, 0);
+        crossAccountWarning = { contas: nomes, count };
+      }
+    } catch {
+      crossAccountWarning = null; // aviso é best-effort, nunca quebra o import
+    }
+
     return {
       contaNome,
+      crossAccountWarning,
       allTransactionsCount: allOriginals.length + projectedInstallments.length,
       newTransactions,
       duplicateTransactions: [],
@@ -1371,12 +1401,29 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
                 onConfirm={handleApplyDateCorrection}
               />
             ) : preparedPlan ? (
-              <CsvImportPreviewV2
-                data={preparedPlan.previewData}
-                confirming={importing}
-                onBack={() => setPreparedPlan(null)}
-                onConfirm={handleImport}
-              />
+              <div className="space-y-3">
+                {preparedPlan.crossAccountWarning && (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+                    <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-foreground">
+                        Atenção: {preparedPlan.crossAccountWarning.count} dessas transações já existem em outra conta
+                        {' '}({preparedPlan.crossAccountWarning.contas.join(', ')}).
+                      </p>
+                      <p className="text-muted-foreground mt-0.5">
+                        Você pode ter selecionado a conta errada. Se for o caso, volte e escolha a conta correta —
+                        senão vai duplicar os lançamentos. Se for intencional, pode prosseguir.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                <CsvImportPreviewV2
+                  data={preparedPlan.previewData}
+                  confirming={importing}
+                  onBack={() => setPreparedPlan(null)}
+                  onConfirm={handleImport}
+                />
+              </div>
             ) : (
               <div className="space-y-4">
                 {loanDoc ? (
