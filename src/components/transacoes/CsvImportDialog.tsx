@@ -652,7 +652,8 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
         // "Saldo anterior da fatura" é artefato de rollover (não é gasto novo):
         // marca ignorar_dashboard pra não inflar despesa do mês em Dashboard/
         // Análises/Planejamento. A fatura acumulada já o ignora explicitamente.
-        ignorar_dashboard: isSaldoAnteriorFatura(t.descricao) || undefined,
+        // SEMPRE booleano (nunca undefined): a coluna é NOT NULL no banco.
+        ignorar_dashboard: isSaldoAnteriorFatura(t.descricao),
         _isOriginal: true,
       });
     }
@@ -724,6 +725,10 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       descricao_normalizada: t.descricao_normalizada || normalizeDescription(t.descricao),
       codigo_cartao: t.codigo_cartao || null,
       valor_dolar: t.valor_dolar || null,
+      // SEMPRE booleano: a coluna ignorar_dashboard é NOT NULL. Projeções e demais
+      // linhas que não definem o campo precisam de um default explícito — senão o
+      // upsert em lote envia null e viola a constraint.
+      ignorar_dashboard: t.ignorar_dashboard ?? false,
       _isOriginal: !("_isProjected" in t),
     }));
 
