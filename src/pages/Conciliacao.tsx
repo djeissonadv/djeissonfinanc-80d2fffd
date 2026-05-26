@@ -113,18 +113,15 @@ export default function ConciliacaoPage() {
         .reverse();
     }
 
-    // Candidato a pagamento de fatura na conta corrente: além do "PAGTO FATURA"
-    // clássico (isFaturaPayment), inclui PIX/transferência ao Mercado Pago
-    // (CNPJ 10573521000191), que paga a fatura do cartão MP mas não tem a palavra
-    // "fatura" no texto. Como pode ser fatura OU parcela de empréstimo, fica como
-    // candidato pra VOCÊ conciliar (não classifica sozinho).
-    const ehPagamentoCartao = (desc: string) =>
-      isFaturaPayment(desc) ||
-      /mercado\s*pago/i.test(desc) ||
-      desc.includes('10573521000191');
+    // Pagamento EXPLÍCITO de fatura ("PAGTO FATURA", "Pagamento de fatura") — claro.
+    // PIX pro Mercado Pago (CNPJ/nome) é AMBÍGUO: pode ser fatura OU parcela do
+    // empréstimo MP. Por isso só vira candidato se o VALOR casar com uma fatura
+    // em aberto — senão (ex: parcela de empréstimo de R$563) não aparece.
+    const ehMercadoPago = (desc: string) => /mercado\s*pago/i.test(desc) || desc.includes('10573521000191');
 
     const pagamentos = txs
-      .filter((t) => debitIds.has(t.conta_id) && t.tipo === 'despesa' && ehPagamentoCartao(t.descricao) && !t.ignorar_dashboard)
+      .filter((t) => debitIds.has(t.conta_id) && t.tipo === 'despesa' && !t.ignorar_dashboard &&
+        (isFaturaPayment(t.descricao) || ehMercadoPago(t.descricao)))
       .map((pay) => {
         const payMonth = (pay.data || '').substring(0, 7);
         // Match: prioriza o cartão+mês cujo total bate por VALOR (±1), preferindo
@@ -137,13 +134,15 @@ export default function ConciliacaoPage() {
             .sort((a, b) => prefer(a) - prefer(b) || b.localeCompare(a));
           if (cands.length) { match = { cardId: c.id, period: cands[0] }; break; }
         }
-        // default do mês: o mês do pagamento, se o cartão tiver lançamento nele.
         const defaultPeriod = match
           ? (periodsByCard[match.cardId].includes(payMonth) ? payMonth : match.period)
           : '';
         const defaultMatch = match ? { cardId: match.cardId, period: defaultPeriod } : null;
         return { pay, contaNome: contas.find((c) => c.id === pay.conta_id)?.nome || '', match: defaultMatch };
-      });
+      })
+      // PIX pro MP só fica se casou por valor com uma fatura. "PAGTO FATURA"
+      // explícito fica sempre (mesmo sem match, pra você escolher manualmente).
+      .filter(({ pay, match }) => isFaturaPayment(pay.descricao) || match !== null);
 
     return { pagamentos, cards, periodsByCard };
   }, [contas, txs]);
