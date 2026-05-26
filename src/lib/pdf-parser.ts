@@ -150,6 +150,7 @@ export async function extractPdfStructured(file: File): Promise<{
   pages: Array<{ rows: PdfTextBlock[]; garbledFonts: Set<string> }>;
   isMercadoPago: boolean;
   isNubankConta: boolean;
+  isNubankCard: boolean;
 }> {
   const pdfjsLib = await loadPdfJs();
   const arrayBuffer = await file.arrayBuffer();
@@ -157,6 +158,7 @@ export async function extractPdfStructured(file: File): Promise<{
 
   let isMercadoPago = false;
   let isNubankConta = false;
+  let isNubankCard = false;
   const pages: Array<{ rows: PdfTextBlock[]; garbledFonts: Set<string> }> = [];
 
   for (let i = 1; i <= doc.numPages; i++) {
@@ -177,11 +179,21 @@ export async function extractPdfStructured(file: File): Promise<{
     ) {
       isNubankConta = true;
     }
+    // Fatura de CARTÃO Nubank: tem o cabeçalho "TRANSAÇÕES DE DD MMM A DD MMM".
+    if (
+      (fullText.includes('nubank') || fullText.includes('nu pagamentos')) &&
+      /transa[çc][õo]es\s+de\s+\d{1,2}\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)/i.test(fullText)
+    ) {
+      isNubankCard = true;
+    }
 
     pages.push({ rows, garbledFonts });
   }
 
-  return { pages, isMercadoPago, isNubankConta };
+  // Nu Conta (extrato) tem prioridade sobre cartão se ambos baterem (não deve ocorrer).
+  if (isNubankConta) isNubankCard = false;
+
+  return { pages, isMercadoPago, isNubankConta, isNubankCard };
 }
 
 // ── Value/date parsing ─────────────────────────────────────────
@@ -893,6 +905,15 @@ export async function parsePdfFile(file: File, defaultPessoa: string = 'Titular'
     if (structured.isNubankConta) {
       return parseNubankConta(structured.pages, defaultPessoa);
     }
+    if (structured.isNubankCard) {
+      // Constrói linhas reais a partir das rows estruturadas (o extractPdfText
+      // junta tudo com espaço, sem \n, e quebra o parser por linha).
+      const lines = structured.pages.flatMap((p) =>
+        p.rows.map((r) => getRowText(r, p.garbledFonts)),
+      );
+      const nu = parseNubankCard(lines, defaultPessoa);
+      if (nu.transactions.length > 0) return nu;
+    }
   } catch (err) {
     console.error('[pdf-parser] extractPdfStructured failed, falling back to generic:', err);
   }
@@ -925,14 +946,22 @@ export async function parsePdfFile(file: File, defaultPessoa: string = 'Titular'
     }
   }
 
-  // Nubank CARTÃO de crédito: tem o cabeçalho de transações "TRANSAÇÕES DE DD MMM
-  // A DD MMM" e mês em PT. O parser genérico (data DD/MM) não pega — usa o dedicado.
+  // Nubank CARTÃO: se a extração estruturada falhou mas o texto indica fatura de
+  // cartão, tenta re-extrair estruturado (o parser precisa de linhas reais).
   if (
     (combined.includes('nubank') || combined.includes('nu pagamentos')) &&
     /transa[çc][õo]es\s+de\s+\d{1,2}\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)/i.test(combined)
   ) {
-    const nu = parseNubankCard(pages, defaultPessoa);
-    if (nu.transactions.length > 0) return nu;
+    try {
+      const s = await extractPdfStructured(file);
+      if (s.isNubankCard) {
+        const lines = s.pages.flatMap((p) => p.rows.map((r) => getRowText(r, p.garbledFonts)));
+        const nu = parseNubankCard(lines, defaultPessoa);
+        if (nu.transactions.length > 0) return nu;
+      }
+    } catch (e) {
+      console.error('[pdf-parser] retry estruturado Nubank card falhou:', e);
+    }
   }
 
   return parseGenericPdf(pages, defaultPessoa);
