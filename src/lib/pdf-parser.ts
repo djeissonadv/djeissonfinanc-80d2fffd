@@ -10,6 +10,10 @@ interface PdfParseResult {
   headerTotal?: number;
   /** Due date detected from header */
   detectedDueDate?: { month: number; year: number; day?: number };
+  /** Saldo inicial do período (extrato de conta corrente, ex: Nu Conta). */
+  openingBalance?: number;
+  /** Data do saldo inicial (YYYY-MM-DD). */
+  openingDate?: string;
 }
 
 // Load PDF.js from CDN
@@ -533,7 +537,7 @@ const NU_DATE_HEADER = /(\d{1,2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV
 const NU_VALUE_AT_END = /(\d{1,3}(?:\.\d{3})*,\d{2})\s*$/;
 const NU_TX_PREFIX = /(Transferência\s+(?:recebida|enviada)\s+pelo\s+Pix|Transferência\s+(?:Recebida|Enviada)|Pagamento\s+de\s+fatura|Pagamento\s+de\s+conta|Compra\s+no\s+(?:débito|debito|crédito|credito)|Estorno|Reembolso|Cashback|Rendimentos?(?:\s+líquidos?| de poupança)?|Saque|Depósito|Tarifa|Boleto)/i;
 
-function parseNubankConta(
+export function parseNubankConta(
   pages: Array<{ rows: PdfTextBlock[]; garbledFonts: Set<string> }>,
   defaultPessoa: string = 'Titular'
 ): PdfParseResult {
@@ -545,12 +549,36 @@ function parseNubankConta(
   let currentDate: string | null = null;
   let currentSection: 'entrada' | 'saida' | null = null;
   let lineNumber = 0;
+  let openingBalance: number | undefined;
+  let openingDate: string | undefined;
+
+  // No layout do extrato Nu Conta, "Saldo inicial" e seu valor caem na mesma
+  // linha (mesma posição Y), ex: "Saldo inicial 1,53". Capturamos pra setar o
+  // saldo_inicial da conta (senão o saldo fica defasado do valor do período).
+  const MESES_FULL: Record<string, number> = {
+    JANEIRO: 1, FEVEREIRO: 2, MARÇO: 3, MARCO: 3, ABRIL: 4, MAIO: 5, JUNHO: 6,
+    JULHO: 7, AGOSTO: 8, SETEMBRO: 9, OUTUBRO: 10, NOVEMBRO: 11, DEZEMBRO: 12,
+  };
 
   for (const { rows, garbledFonts } of pages) {
     for (const row of rows) {
       lineNumber++;
       const text = getRowText(row, garbledFonts);
       if (!text) continue;
+
+      // Saldo inicial do período (apenas a primeira ocorrência).
+      if (openingBalance === undefined) {
+        const sm = text.match(/saldo inicial\s+R?\$?\s*(-?\d{1,3}(?:\.\d{3})*,\d{2})/i);
+        if (sm) openingBalance = parseValue(sm[1]) ?? undefined;
+      }
+      // Data inicial do período: "01 DE JANEIRO DE 2026 a 31 ..."
+      if (openingDate === undefined) {
+        const pm = text.match(/(\d{1,2})\s+DE\s+([A-ZÇÃ]+)\s+DE\s+(\d{4})\s+a\s+/i);
+        if (pm) {
+          const mn = MESES_FULL[pm[2].toUpperCase()];
+          if (mn) openingDate = `${pm[3]}-${String(mn).padStart(2, '0')}-${pm[1].padStart(2, '0')}`;
+        }
+      }
 
       // Update current date when we see a date marker (may share row with section header)
       const dateMatch = text.match(NU_DATE_HEADER);
@@ -666,6 +694,8 @@ function parseNubankConta(
     totalLines: lineNumber,
     lineLogs,
     institution: 'Nu Conta',
+    openingBalance,
+    openingDate,
   };
 }
 

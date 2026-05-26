@@ -316,6 +316,10 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
         if (parsed.detectedDueDate) {
           detectedDue = { month: parsed.detectedDueDate.month, year: parsed.detectedDueDate.year };
         }
+        // Saldo inicial detectado em extrato de conta (ex: Nu Conta em PDF).
+        openingDetected = parsed.openingBalance != null && parsed.openingDate
+          ? { balance: parsed.openingBalance, date: parsed.openingDate }
+          : null;
       } catch (err: any) {
         if (err?.message === "PDF_PASSWORD") {
           toast({
@@ -1146,11 +1150,12 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       }
 
       // Step 0: Reconcile opening balance from the statement. Sets the account's
-      // saldo_inicial = saldo anterior detectado no OFX, mas SÓ na primeira
-      // importação de uma conta de débito cujo saldo inicial nunca foi definido —
-      // evita sobrescrever valor manual e a dupla contagem de "Saldo de Abertura".
+      // saldo_inicial = saldo anterior detectado no extrato (OFX ou PDF de conta,
+      // ex: Nu Conta), mas SÓ na primeira importação de uma conta de débito cujo
+      // saldo inicial nunca foi definido — evita sobrescrever valor manual e a
+      // dupla contagem de "Saldo de Abertura".
       let openingApplied: { balance: number; date: string } | null = null;
-      if (fileType === "ofx" && parsedOpening) {
+      if (parsedOpening) {
         const { data: contaRow } = await supabase
           .from("contas")
           .select("saldo_inicial, tipo")
