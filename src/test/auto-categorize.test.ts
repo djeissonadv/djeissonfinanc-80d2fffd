@@ -25,6 +25,23 @@ describe('autoCategorizarTransacao — padrões do usuário', () => {
     ['PANVEL FARMACIAS PASSO FUNDO BR', 'Saúde'],
     // Beleza
     ['DECADA BARBEARIA CLASS PASSO FUNDO   BRA', 'Beleza'],
+    // Conta corrente (OFX)
+    ['RECEBIMENTO PIX-CX497834  50937235000182 ADVERSE PRODUTORA AUDIOVISUAL LTDA', 'Receita Produtora'],
+    ['LIQUIDACAO BOLETO SICREDI-600156574 10361115000165 CEOLIN ADMINISTRACAO DE IMOVEI', 'Casa'],
+    ['PAGAMENTO PIX-PIX_DEB   02016440000162 RGE', 'Casa'],
+    ['LIQUIDACAO BOLETO-          19791896000283 SUPERGASBRAS ENERGIA LTDA', 'Casa'],
+    ['LIQUIDACAO BOLETO-          00360305000104 GCI CAIXA   HABITACAO', 'Casa'],
+    ['AMORTIZACAO CONTRATO-C5A920011 ', 'Empréstimos'],
+    ['APLICACAO POUPANCA-SOBRAS_CP ', 'Investimentos'],
+    ['COMPRA DEBITO MASTER-CM0436559 MTD AmorSaude Passo Fu   Passo Fundo  BR', 'Saúde'],
+    // Fixes de padrões truncados
+    ['COTRISAL SUPERMERCAD', 'Alimentação'],
+    ['NH COMERCIO DE COSM', 'Beleza'],
+    // Vestuário / outros novos
+    ['FEIRA DE CALCADOS', 'Vestuário'],
+    ['ZAFFARI 09', 'Alimentação'],
+    ['ORGANIZZE TE ORGANI', 'Assinatura'],
+    ['PEDU RESTAURANTE', 'Alimentação'],
     // Já existentes (regressão)
     ['NETFLIX COM', 'Assinatura'],
     ['CONTA VIVO             SAO PAULO     BRA', 'Serviços'],

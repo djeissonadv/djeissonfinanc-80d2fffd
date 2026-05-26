@@ -20,7 +20,7 @@ const RULES: CategoriaRule[] = [
   { patterns: ['PAGTO FATURA', 'PAGAMENTO FATURA', 'PAGTO FAT', 'PAG FATURA'], categoria: 'Operação bancária' },
 
   // EMPRÉSTIMOS
-  { patterns: ['LIQUIDACAO DE PARCELA', 'LIQUIDAÇÃO DE PARCELA', 'PARCELA-C5A'], categoria: 'Empréstimos' },
+  { patterns: ['LIQUIDACAO DE PARCELA', 'LIQUIDAÇÃO DE PARCELA', 'PARCELA-C5A', 'AMORTIZACAO CONTRATO', 'AMORTIZAÇÃO CONTRATO'], categoria: 'Empréstimos' },
 
   // TARIFAS / OPERAÇÕES BANCÁRIAS
   { patterns: ['IOF BASICO', 'IOF ADICIONAL', 'IOF COMPRA', 'CESTA DE RELACIONAMENTO', 'INTEGR.CAPITAL SUBSCRITO', 'INTEGRCAPITAL SUBSCRITO', 'JUROS UTILIZ', 'MENSALID TAG'], categoria: 'Operação bancária' },
@@ -28,8 +28,11 @@ const RULES: CategoriaRule[] = [
   // IMPOSTOS → Transporte (categoria canônica que abarca impostos de veículo/IPVA)
   { patterns: ['RECEITA FEDERAL', 'ARRECADACAO ESTADUAL', 'IPVA', 'DETRAN', 'DPVAT'], categoria: 'Transporte' },
 
-  // INVESTIMENTOS (receita)
-  { patterns: ['TORO INVESTIMEN', 'TORO INVEST', 'XP INVEST', 'CLEAR CORRET'], categoria: 'Investimentos' },
+  // INVESTIMENTOS (receita / poupança / sobras da cooperativa)
+  { patterns: ['TORO INVESTIMEN', 'TORO INVEST', 'XP INVEST', 'CLEAR CORRET', 'APLICACAO POUPANCA', 'DISTRIBUICAO RESULTADOS'], categoria: 'Investimentos' },
+
+  // RECEITA DA PRODUTORA — precede o PIX genérico (a memo tem "RECEBIMENTO PIX ... ADVERSE")
+  { patterns: ['ADVERSE PRODUTORA', 'ADVERSE'], categoria: 'Receita Produtora' },
 
   // SEGURO DE VIDA → Saúde
   { patterns: ['PRUDENTIAL'], categoria: 'Saúde' },
@@ -38,7 +41,7 @@ const RULES: CategoriaRule[] = [
   { patterns: ['SUICA SEGURAD', 'ASAASIP*SUICA', 'ASAAS*SUICA', 'ASAASIPSUICA', 'ASAASSUICA'], categoria: 'Transporte' },
 
   // ASSINATURA
-  { patterns: ['NETFLIX', 'SPOTIFY', 'AMAZON PRIME', 'YOUTUBE PREMIUM', 'YOUTUBE PREMI', 'APPLECOMBILL', 'APPLE.COM', 'APPLECOM', 'BUDGI', 'PIXIESET', 'GODADDY', 'BRASIL PARAL', 'BRASILPAR', 'KIWIFY', 'HOTMART'], categoria: 'Assinatura' },
+  { patterns: ['NETFLIX', 'SPOTIFY', 'AMAZON PRIME', 'YOUTUBE PREMIUM', 'YOUTUBE PREMI', 'APPLECOMBILL', 'APPLE.COM', 'APPLECOM', 'BUDGI', 'PIXIESET', 'GODADDY', 'BRASIL PARAL', 'BRASILPAR', 'KIWIFY', 'HOTMART', 'ORGANIZZE', 'MELIMAIS', 'MELI MAIS'], categoria: 'Assinatura' },
 
   // EDUCAÇÃO
   { patterns: ['HTM*SIMONE', 'HTMSIMONE', 'SIMONE DE OLIVE', 'CURSO', 'ESCOLA', 'FACULDADE', 'MENTORIA'], categoria: 'Educação' },
@@ -47,28 +50,31 @@ const RULES: CategoriaRule[] = [
   { patterns: ['CONTA VIVO', 'COPREL TELECOM', 'VIVO', 'CLARO TELECOM', 'TIM CELULAR', 'TIM S.A', 'TIM SA', 'TIM *'], categoria: 'Serviços' },
 
   // SAÚDE
-  { patterns: ['FARMACIA', 'FARMACIAS', 'SAO JOAO FARMACIAS', 'PANVEL', 'DROGARIA', 'CONSULTORIO', 'DR FBS', 'ROSELI MAGALHAES', 'CARTAO DE TODOS', 'CARTAODETODO', 'NATUPHARMA'], categoria: 'Saúde' },
+  { patterns: ['FARMACIA', 'FARMACIAS', 'SAO JOAO FARMACIAS', 'PANVEL', 'DROGARIA', 'CONSULTORIO', 'DR FBS', 'ROSELI MAGALHAES', 'CARTAO DE TODOS', 'CARTAODETODO', 'NATUPHARMA', 'AMORSAUDE', 'AMOR SAUDE', 'ODONTO', 'HOSPITAL'], categoria: 'Saúde' },
 
   // BELEZA
-  { patterns: ['OBOTICARIO', 'HNA*OBOTICARIO', 'HNAOBOTICARIO', 'LETICIA MUNIZ', 'NH COMERCIO COSM', 'BEAUTY', 'ESTETICA', 'BARBEARIA', 'DECADA BARBEARIA'], categoria: 'Beleza' },
+  { patterns: ['OBOTICARIO', 'HNA*OBOTICARIO', 'HNAOBOTICARIO', 'LETICIA MUNIZ', 'NH COMERCIO', 'BEAUTY', 'ESTETICA', 'BARBEARIA', 'DECADA BARBEARIA'], categoria: 'Beleza' },
 
-  // MORADIA → Casa
-  { patterns: ['CEOLIN ADMINISTRACAO', 'RESIDENCIAL PORTO SEGURO', 'ZOOP BRASIL', 'CONDOMINIO', 'ALUGUEL'], categoria: 'Casa' },
+  // VESTUÁRIO (calçados/roupas)
+  { patterns: ['CALCADOS', 'PITTOL', 'FEIRA DE CALCADOS'], categoria: 'Vestuário' },
+
+  // MORADIA / CONTAS DA CASA → Casa (aluguel, condomínio, energia, gás)
+  { patterns: ['CEOLIN ADMINISTRACAO', 'RESIDENCIAL PORTO SEGURO', 'ZOOP BRASIL', 'CONDOMINIO', 'ALUGUEL', 'SUPERGASBRAS', '02016440000162', 'CAIXA HABITACAO', 'ARMAZEM DA UTILIDADE', 'SEMPRE UTIL'], categoria: 'Casa' },
 
   // COMBUSTÍVEL → Transporte
   { patterns: ['PF CIDADE NOVA'], categoria: 'Transporte' },
 
   // TRANSPORTE (apps, oficina, peças, combustível, lava-jato)
-  { patterns: ['PASSAGEM PEDAGIO', 'PEDAGIO', 'MENSALID TAG DE PASSAGEM', 'LAPAZA EMPREEND', '99APP', 'UBER', 'MECANICA', 'AUTO PECAS', 'ABASTECEDORA', 'CAR WASH', 'LAVA JATO', 'POSTO ', 'TAURA AUTO'], categoria: 'Transporte' },
+  { patterns: ['PASSAGEM PEDAGIO', 'PEDAGIO', 'MENSALID TAG DE PASSAGEM', 'LAPAZA EMPREEND', '99APP', 'UBER', 'MECANICA', 'AUTO PECAS', 'ABASTECEDORA', 'CAR WASH', 'LAVA JATO', 'POSTO ', 'TAURA AUTO', 'CLOUDPARK', 'ESTACIONAMENTO'], categoria: 'Transporte' },
 
   // COMPRAS (online)
   { patterns: ['MERCADOLIVRE', 'MERCADO*MERCAD', 'MERCADOMERCAD', 'MERCADO*RICO', 'MERCADORICO', 'MERCADO*15PROD', 'MERCADO15PROD', 'SHOPEE', 'HAVAN', 'SHEIN', 'SITE HAVAN', 'COMAXCASA', 'MERLIN MAT', 'NOVACOR', 'NOVA COR'], categoria: 'Compras' },
 
   // ALIMENTAÇÃO (mercado/atacarejo, restaurantes, delivery, padaria)
-  { patterns: ['MIX CENTER', 'FRUTEIRA TERRIBILE', 'COTRISAL SUPERMERCADO', 'SUPERMERCADO', 'STOK CENTER', 'TOP MAIS', 'MINIMARKET', 'MERCADO MOY', 'DOCE MANIA', '212 BISTRO', 'QUESTO GASTRONOMIA', 'IFOOD', 'IFD*', 'CAFE PREMIUM', 'DONA AUGUSTA', 'AMO RESTAURANTE', 'QUIERO CAFE', 'PADARIA'], categoria: 'Alimentação' },
+  { patterns: ['MIX CENTER', 'FRUTEIRA TERRIBILE', 'COTRISAL', 'SUPERMERCADO', 'ZAFFARI', 'STOK CENTER', 'TOP MAIS', 'MINIMARKET', 'MERCADO MOY', 'DOCE MANIA', '212 BISTRO', 'QUESTO GASTRONOMIA', 'IFOOD', 'IFD*', 'CAFE PREMIUM', 'DONA AUGUSTA', 'AMO RESTAURANTE', 'AMO CABANA', 'RESTAURANTE', 'ALASSIO CAFE', 'CAFE E PROSA', 'CONVENIENCIA', 'QUIERO CAFE', 'PADARIA'], categoria: 'Alimentação' },
 
   // RECEITA → Outras receitas (catch-all)
-  { patterns: ['RECEBIMENTO PIX', 'PIX SICREDI', 'ADVERSE PRODUTORA', 'VERTATTO NEGOCIOS'], categoria: 'Outras receitas' },
+  { patterns: ['RECEBIMENTO PIX', 'PIX SICREDI', 'VERTATTO NEGOCIOS'], categoria: 'Outras receitas' },
 
   // COMPRAS GENÉRICAS (Mercado Pago catch-all)
   { patterns: ['MP *', 'MP*', 'MERPAG*', 'MERCADOPAGO*'], categoria: 'Compras' },
