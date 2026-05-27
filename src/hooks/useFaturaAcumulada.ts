@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { isFaturaPayment, isDevolution, isSaldoAnteriorFatura, isFaturaTotalMarker } from '@/lib/csv-parser';
+import { isFaturaPayment, isDevolution, isSaldoAnteriorFatura, isFaturaTotalMarker, isConciliacaoPayment } from '@/lib/csv-parser';
 import { fetchAllRows } from '@/lib/supabase-fetch';
 
 interface CardTxRow {
@@ -61,7 +61,7 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
 
         // Group transactions by billing period
         // Use mes_competencia when available, fall back to YYYY-MM from data
-        const byPeriod: Record<string, { despesas: number; pagamentos: number }> = {};
+        const byPeriod: Record<string, { despesas: number; pagamentos: number; conciliado: number }> = {};
         // "Total a pagar" informado pelo próprio extrato (marcador), por período.
         // Quando existe, é a FONTE DA VERDADE da fatura (ex: Mercado Pago rotativo,
         // onde a acumulação por mês conta o saldo carregado em dobro).
@@ -79,7 +79,7 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
           if (isSaldoAnteriorFatura(t.descricao)) continue;
 
           const periodo = t.mes_competencia || t.data.substring(0, 7);
-          if (!byPeriod[periodo]) byPeriod[periodo] = { despesas: 0, pagamentos: 0 };
+          if (!byPeriod[periodo]) byPeriod[periodo] = { despesas: 0, pagamentos: 0, conciliado: 0 };
 
           if (t.tipo === 'despesa') {
             byPeriod[periodo].despesas += Number(t.valor);
@@ -88,6 +88,11 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
           // Detect payments (receita that are fatura payments)
           if (isFaturaPayment(t.descricao)) {
             byPeriod[periodo].pagamentos += Math.abs(Number(t.valor));
+            // Pagamento EXPLÍCITO (conciliação/"Pagar fatura") — é o único que
+            // abate quando há "Total informado", pois o marcador já é líquido.
+            if (isConciliacaoPayment(t.descricao)) {
+              byPeriod[periodo].conciliado += Math.abs(Number(t.valor));
+            }
           }
 
           // Devolutions reduce despesas (valor is always stored positive; use abs for safety)
@@ -118,14 +123,16 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
         // (overpayment doesn't carry as credit to next month in this model)
         saldoAnterior = Math.max(0, saldoAnterior);
 
-        const currentPeriod = byPeriod[billingMonth] || { despesas: 0, pagamentos: 0 };
+        const currentPeriod = byPeriod[billingMonth] || { despesas: 0, pagamentos: 0, conciliado: 0 };
 
         // Se o extrato informou o "Total a pagar" deste período, ele MANDA: o
-        // a pagar = total informado − pagamentos já feitos no mês (conciliação).
-        // Senão, usa a acumulação (saldoAnterior + mês − pago).
+        // a pagar = total informado − pagamentos CONCILIADOS (explícitos). As
+        // linhas de pagamento internas do extrato são ignoradas aqui porque o
+        // marcador já é o líquido do extrato (e elas caem na competência errada).
+        // Sem marcador, cai na acumulação antiga (saldoAnterior + mês − pago).
         const informado = totalInformado[billingMonth];
         const totalAPagar = informado != null
-          ? Math.max(0, informado - currentPeriod.pagamentos)
+          ? Math.max(0, informado - currentPeriod.conciliado)
           : saldoAnterior + currentPeriod.despesas - currentPeriod.pagamentos;
 
         result[cardId] = {

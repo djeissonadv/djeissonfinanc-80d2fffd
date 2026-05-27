@@ -93,6 +93,19 @@ export function isFaturaTotalMarker(desc: string): boolean {
   return /total da fatura \(informado/i.test(desc);
 }
 
+/**
+ * Pagamento de fatura feito EXPLICITAMENTE pelo usuário — via "Pagar fatura"
+ * (PaymentModal) ou pela Conciliação. Sempre tem o sufixo " - <conta/cartão>"
+ * ("Pag Fat Deb Cc - Black"). Diferente das linhas INTERNAS do extrato
+ * ("Pag Fat Deb Cc" do CSV Sicredi, "Pagamento da fatura de X" do MP), que pagam
+ * a fatura ANTERIOR e caem na competência errada. Quando a fatura tem o "Total
+ * informado" (marcador), só os pagamentos de conciliação abatem — o marcador já
+ * reflete o líquido do extrato.
+ */
+export function isConciliacaoPayment(desc: string): boolean {
+  return /pag\s*fat\s*deb\s*cc\s*-\s*\S/i.test(desc);
+}
+
 export function isFaturaPayment(desc: string): boolean {
   if (isDevolution(desc)) return false;
   if (isFaturaTotalMarker(desc)) return false;
