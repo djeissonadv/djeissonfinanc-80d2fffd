@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTodayIso } from '@/hooks/useTodayIso';
 import { formatCurrency } from '@/lib/format';
 import { fetchAllRows } from '@/lib/supabase-fetch';
-import { normalizeDescription, isFaturaPayment, isDevolution, isSaldoAnteriorFatura, isFaturaTotalMarker, generateHash } from '@/lib/csv-parser';
+import { normalizeDescription, isFaturaPayment, isDevolution, isSaldoAnteriorFatura, isFaturaTotalMarker, isConciliacaoPayment, generateHash } from '@/lib/csv-parser';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -119,9 +119,20 @@ export default function ConciliacaoPage() {
     // em aberto — senão (ex: parcela de empréstimo de R$563) não aparece.
     const ehMercadoPago = (desc: string) => /mercado\s*pago/i.test(desc) || desc.includes('10573521000191');
 
+    // Valores já conciliados (existe uma baixa "Pag Fat Deb Cc - X" no cartão).
+    // Um pagamento da conta corrente é candidato se AINDA não tem baixa
+    // correspondente — independente de ignorar_dashboard (conciliações antigas
+    // marcaram o débito como ignorado, mas se a baixa foi removida ele precisa
+    // reaparecer pra reconciliar).
+    const valoresConciliados = txs
+      .filter((t) => isConciliacaoPayment(t.descricao))
+      .map((t) => Math.abs(Number(t.valor)));
+    const jaConciliado = (v: number) => valoresConciliados.some((x) => Math.abs(x - v) <= 0.5);
+
     const pagamentos = txs
-      .filter((t) => debitIds.has(t.conta_id) && t.tipo === 'despesa' && !t.ignorar_dashboard &&
-        (isFaturaPayment(t.descricao) || ehMercadoPago(t.descricao)))
+      .filter((t) => debitIds.has(t.conta_id) && t.tipo === 'despesa' &&
+        (isFaturaPayment(t.descricao) || ehMercadoPago(t.descricao)) &&
+        !jaConciliado(Math.abs(Number(t.valor))))
       .map((pay) => {
         const payMonth = (pay.data || '').substring(0, 7);
         // Match: prioriza o cartão+mês cujo total bate por VALOR (±1), preferindo
