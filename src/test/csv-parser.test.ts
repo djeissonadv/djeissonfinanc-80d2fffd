@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { parseSicrediCSV, normalizeDescription, parseValue, isSaldoAnteriorFatura } from '@/lib/csv-parser';
+import { parseSicrediCSV, normalizeDescription, parseValue, isSaldoAnteriorFatura, isFaturaTotalMarker, isFaturaPayment } from '@/lib/csv-parser';
+
+describe('isFaturaTotalMarker — marcador do total informado pelo extrato', () => {
+  it('detecta o marcador', () => {
+    expect(isFaturaTotalMarker('Total da fatura (informado pelo extrato)')).toBe(true);
+  });
+  it('NÃO é pagamento de fatura (pra não abater)', () => {
+    expect(isFaturaPayment('Total da fatura (informado pelo extrato)')).toBe(false);
+  });
+  it('compra normal não é marcador', () => {
+    expect(isFaturaTotalMarker('MERCADOLIVRE COMPRA')).toBe(false);
+  });
+});
 
 describe('isSaldoAnteriorFatura — artefato de rollover (não é despesa nova)', () => {
   it('detecta "Saldo anterior da fatura"', () => {

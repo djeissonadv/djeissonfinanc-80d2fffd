@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { isFaturaPayment, isDevolution, isSaldoAnteriorFatura } from '@/lib/csv-parser';
+import { isFaturaPayment, isDevolution, isSaldoAnteriorFatura, isFaturaTotalMarker } from '@/lib/csv-parser';
 import { fetchAllRows } from '@/lib/supabase-fetch';
 
 interface CardTxRow {
@@ -62,8 +62,17 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
         // Group transactions by billing period
         // Use mes_competencia when available, fall back to YYYY-MM from data
         const byPeriod: Record<string, { despesas: number; pagamentos: number }> = {};
+        // "Total a pagar" informado pelo próprio extrato (marcador), por período.
+        // Quando existe, é a FONTE DA VERDADE da fatura (ex: Mercado Pago rotativo,
+        // onde a acumulação por mês conta o saldo carregado em dobro).
+        const totalInformado: Record<string, number> = {};
 
         for (const t of cardTxs) {
+          // Marcador do total informado: não é despesa — guarda pra sobrescrever.
+          if (isFaturaTotalMarker(t.descricao)) {
+            totalInformado[t.mes_competencia || t.data.substring(0, 7)] = Number(t.valor);
+            continue;
+          }
           // "Saldo anterior da fatura" é artefato de rollover — este hook já
           // acumula o saldo dos meses anteriores (saldoAnterior abaixo), então
           // contar essa linha como despesa duplicaria o mês anterior inteiro.
@@ -111,11 +120,19 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
 
         const currentPeriod = byPeriod[billingMonth] || { despesas: 0, pagamentos: 0 };
 
+        // Se o extrato informou o "Total a pagar" deste período, ele MANDA: o
+        // a pagar = total informado − pagamentos já feitos no mês (conciliação).
+        // Senão, usa a acumulação (saldoAnterior + mês − pago).
+        const informado = totalInformado[billingMonth];
+        const totalAPagar = informado != null
+          ? Math.max(0, informado - currentPeriod.pagamentos)
+          : saldoAnterior + currentPeriod.despesas - currentPeriod.pagamentos;
+
         result[cardId] = {
-          saldoAnterior,
+          saldoAnterior: informado != null ? 0 : saldoAnterior,
           despesasMes: currentPeriod.despesas,
           pagamentosMes: currentPeriod.pagamentos,
-          totalAPagar: saldoAnterior + currentPeriod.despesas - currentPeriod.pagamentos,
+          totalAPagar,
           historico: historico.filter(h => h.periodo <= billingMonth),
         };
       }

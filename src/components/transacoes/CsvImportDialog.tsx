@@ -13,6 +13,7 @@ import {
   isFaturaPayment,
   isCreditoParcelamento,
   isSaldoAnteriorFatura,
+  FATURA_TOTAL_MARKER,
   type SkippedLine,
   type ClassifiedTransaction,
   type CsvLineLogEntry,
@@ -132,6 +133,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
   const [parsedLineLogs, setParsedLineLogs] = useState<CsvLineLogEntry[]>([]);
   const [parsedOpening, setParsedOpening] = useState<{ balance: number; date: string } | null>(null);
   const [parsedDueDay, setParsedDueDay] = useState<number | null>(null);
+  const [parsedHeaderTotal, setParsedHeaderTotal] = useState<number | null>(null);
   const [loanDoc, setLoanDoc] = useState<CreditoDescritivo | null>(null);
   const [loanContaId, setLoanContaId] = useState<string>("");
   const [loanImporting, setLoanImporting] = useState(false);
@@ -276,6 +278,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     let accountNumber: string | null = null;
     let dueDay: number | null = null;
     let detectedDue: { month: number; year: number } | null = null;
+    let headerTotalDetected: number | null = null;
 
     if (ext === "pdf") {
       try {
@@ -320,6 +323,8 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
         openingDetected = parsed.openingBalance != null && parsed.openingDate
           ? { balance: parsed.openingBalance, date: parsed.openingDate }
           : null;
+        // "Total a pagar" informado na fatura (fonte da verdade p/ cartão rotativo).
+        headerTotalDetected = parsed.headerTotal != null && parsed.headerTotal > 0 ? parsed.headerTotal : null;
       } catch (err: any) {
         if (err?.message === "PDF_PASSWORD") {
           toast({
@@ -418,6 +423,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     setParsedOpening(openingDetected);
     setDetectedAccountNumber(accountNumber);
     setParsedDueDay(dueDay);
+    setParsedHeaderTotal(headerTotalDetected);
 
     // Para PDF/OFX: prioriza o vencimento DETECTADO no documento (ex: "Vence em
     // 20/02/2026" → fatura de fevereiro). Só cai no palpite por data de transação
@@ -1178,9 +1184,36 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       }
 
       // Step 0b: guarda o dia de vencimento detectado na fatura do cartão.
+      // (Em Lovable Cloud a coluna pode não existir ainda — não-fatal.)
       if (isCredito && parsedDueDay && parsedDueDay >= 1 && parsedDueDay <= 31) {
-        await supabase.from("contas").update({ dia_vencimento: parsedDueDay }).eq("id", context.contaId);
-        queryClient.invalidateQueries({ queryKey: ["contas"] });
+        const { error: dvErr } = await supabase.from("contas").update({ dia_vencimento: parsedDueDay }).eq("id", context.contaId);
+        if (dvErr) console.warn("[Import] dia_vencimento não gravado (coluna ausente?):", dvErr.message);
+        else queryClient.invalidateQueries({ queryKey: ["contas"] });
+      }
+
+      // Step 0c: grava o "Total a pagar" informado na fatura como MARCADOR ignorado
+      // no cartão. O cálculo da fatura usa esse valor pra sobrescrever o "A pagar"
+      // (fonte da verdade p/ cartão rotativo como o Mercado Pago, onde a acumulação
+      // por mês conta o saldo carregado em dobro). Upsert por hash estável.
+      if (isCredito && parsedHeaderTotal && parsedHeaderTotal > 0 && dueConfirmed) {
+        const periodo = `${dueYear}-${String(dueMonth + 1).padStart(2, "0")}`;
+        const markerHash = `fatura_total_${context.contaId}_${periodo}`;
+        const { error: mErr } = await supabase.from("transacoes").upsert({
+          user_id: context.currentUserId,
+          conta_id: context.contaId,
+          data: `${periodo}-01`,
+          mes_competencia: periodo,
+          descricao: FATURA_TOTAL_MARKER,
+          descricao_normalizada: normalizeDescription(FATURA_TOTAL_MARKER),
+          valor: parsedHeaderTotal,
+          categoria: "Operação bancária",
+          tipo: "despesa",
+          essencial: false,
+          ignorar_dashboard: true,
+          hash_transacao: markerHash,
+          pessoa: "Sistema",
+        }, { onConflict: "user_id,hash_transacao" });
+        if (mErr) console.warn("[Import] marcador de total da fatura não gravado:", mErr.message);
       }
 
       // Step 1: Delete auto-projected duplicates
@@ -1392,6 +1425,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     setParsedLineLogs([]);
     setParsedOpening(null);
     setParsedDueDay(null);
+    setParsedHeaderTotal(null);
     setLoanDoc(null);
     setLoanContaId("");
     setLoanImporting(false);

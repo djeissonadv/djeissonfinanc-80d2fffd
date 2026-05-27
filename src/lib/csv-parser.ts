@@ -80,8 +80,20 @@ export function isSaldoAnteriorFatura(desc: string): boolean {
   return /saldo anterior da fatura/i.test(desc);
 }
 
+/**
+ * Marcador do "Total a pagar" informado pelo próprio extrato do cartão (ex:
+ * Mercado Pago, que é rotativo e consolida o saldo — a acumulação por mês conta
+ * em dobro). Guardamos esse total como uma transação-marcador IGNORADA no cartão;
+ * o cálculo da fatura usa o valor pra SOBRESCREVER o "A pagar" do período.
+ */
+export const FATURA_TOTAL_MARKER = 'Total da fatura (informado pelo extrato)';
+export function isFaturaTotalMarker(desc: string): boolean {
+  return /total da fatura \(informado/i.test(desc);
+}
+
 export function isFaturaPayment(desc: string): boolean {
   if (isDevolution(desc)) return false;
+  if (isFaturaTotalMarker(desc)) return false;
   const d = desc.toLowerCase();
   return (
     d.includes('pag fat') ||

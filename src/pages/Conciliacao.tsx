@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTodayIso } from '@/hooks/useTodayIso';
 import { formatCurrency } from '@/lib/format';
 import { fetchAllRows } from '@/lib/supabase-fetch';
-import { normalizeDescription, isFaturaPayment, isDevolution, isSaldoAnteriorFatura, generateHash } from '@/lib/csv-parser';
+import { normalizeDescription, isFaturaPayment, isDevolution, isSaldoAnteriorFatura, isFaturaTotalMarker, generateHash } from '@/lib/csv-parser';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -87,7 +87,7 @@ export default function ConciliacaoPage() {
     for (const c of cards) fatura[c.id] = {};
     for (const t of txs) {
       if (!fatura[t.conta_id]) continue;
-      if (isSaldoAnteriorFatura(t.descricao)) continue; // artefato de rollover
+      if (isSaldoAnteriorFatura(t.descricao) || isFaturaTotalMarker(t.descricao)) continue; // artefatos
       const p = t.mes_competencia || t.data.substring(0, 7);
       const b = (fatura[t.conta_id][p] ||= { despesas: 0, pagamentos: 0 });
       if (t.tipo === 'despesa') b.despesas += Number(t.valor);
@@ -207,7 +207,7 @@ export default function ConciliacaoPage() {
       // Duplicatas: mesma desc+valor+data+competência (exclui projeções)
       const groups: Record<string, Tx[]> = {};
       for (const t of list) {
-        if (t.descricao.includes('(auto-projetada)')) continue;
+        if (t.descricao.includes('(auto-projetada)') || isFaturaTotalMarker(t.descricao)) continue;
         const k = `${normalizeDescription(t.descricao)}|${Number(t.valor).toFixed(2)}|${t.data}|${t.mes_competencia || '-'}`;
         (groups[k] ||= []).push(t);
       }
@@ -249,7 +249,7 @@ export default function ConciliacaoPage() {
       if (c.tipo === 'credito') {
         const perMap: Record<string, { compras: number; pago: number; pagamentos: Tx[] }> = {};
         for (const t of list) {
-          if (isSaldoAnteriorFatura(t.descricao)) continue;
+          if (isSaldoAnteriorFatura(t.descricao) || isFaturaTotalMarker(t.descricao)) continue;
           const p = t.mes_competencia || t.data.substring(0, 7);
           perMap[p] ||= { compras: 0, pago: 0, pagamentos: [] };
           if (isFaturaPayment(t.descricao)) { perMap[p].pago += Math.abs(Number(t.valor)); perMap[p].pagamentos.push(t); }
