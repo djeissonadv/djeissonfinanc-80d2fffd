@@ -100,6 +100,25 @@ function totalIncome(transactions: TransactionRecord[]): number {
 }
 
 /**
+ * Average monthly income, dividing only by the months that ACTUALLY have
+ * income. Dividing lifetime income by every month present (including months
+ * where the salary wasn't imported) understates the real monthly figure.
+ */
+function averageMonthlyIncome(transactions: TransactionRecord[]): number {
+  const receitas = transactions.filter(
+    (t) => t.tipo === 'receita' && !t.ignorar_dashboard,
+  );
+  const months: Record<string, number> = {};
+  for (const t of receitas) {
+    const m = getMonthKey(t);
+    months[m] = (months[m] || 0) + t.valor;
+  }
+  const values = Object.values(months);
+  if (values.length === 0) return 0;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+/**
  * Total expenses across all months.
  */
 function totalExpenses(transactions: TransactionRecord[]): number {
@@ -113,9 +132,13 @@ function totalExpenses(transactions: TransactionRecord[]): number {
 // ---------------------------------------------------------------------------
 
 function scoreTaxaPoupanca(transactions: TransactionRecord[], receitaBase: number): HealthComponent {
-  const receita = totalIncome(transactions) || receitaBase;
-  const despesa = totalExpenses(transactions);
-  const savingsRate = receita > 0 ? (receita - despesa) / receita : 0;
+  // Monthly-aligned: compara uma RECEITA MENSAL contra a DESPESA MENSAL média.
+  // Misturar receita acumulada (lifetime) com despesa acumulada distorce a taxa
+  // quando a receita só foi importada em parte dos meses (ex.: salário ausente em
+  // alguns meses inflaria artificialmente a poupança).
+  const monthlyIncome = receitaBase > 0 ? receitaBase : averageMonthlyIncome(transactions);
+  const monthlyExpense = averageMonthlyExpenses(transactions);
+  const savingsRate = monthlyIncome > 0 ? (monthlyIncome - monthlyExpense) / monthlyIncome : 0;
 
   let score: number;
   if (savingsRate <= 0) {
@@ -239,21 +262,22 @@ function scoreComprometimentoParcelas(
   transactions: TransactionRecord[],
   receitaBase: number,
 ): HealthComponent {
-  const receita = totalIncome(transactions) || receitaBase;
+  const monthlyIncome = receitaBase > 0 ? receitaBase : averageMonthlyIncome(transactions);
 
-  // Count months to get monthly average of installment payments
-  const months = new Set<string>();
+  // Desembolso médio de parcelas por mês que DE FATO tem parcelas. Dividir o total
+  // acumulado de parcelas por TODOS os meses (incluindo meses sem nenhuma parcela)
+  // subestimava o comprometimento mensal real.
+  const installmentMonths = new Set<string>();
   let totalInstallments = 0;
   for (const t of transactions) {
     if (t.tipo === 'despesa' && !t.ignorar_dashboard && t.parcela_atual && t.parcela_total) {
       totalInstallments += t.valor;
+      installmentMonths.add(getMonthKey(t));
     }
-    months.add(getMonthKey(t));
   }
 
-  const monthCount = months.size || 1;
-  const monthlyInstallments = totalInstallments / monthCount;
-  const monthlyIncome = receita / monthCount || receitaBase;
+  const monthlyInstallments =
+    installmentMonths.size > 0 ? totalInstallments / installmentMonths.size : 0;
   const ratio = monthlyIncome > 0 ? monthlyInstallments / monthlyIncome : 0;
 
   let score: number;

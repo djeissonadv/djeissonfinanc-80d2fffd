@@ -6,6 +6,7 @@
  */
 
 import type { TransactionRecord } from './projection-engine';
+import { toLocalIso } from './format';
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -255,21 +256,26 @@ export function detectRecurringCharges(
 
 export function calculateMonthlyDigest(
   transactions: TransactionRecord[],
+  today: string = toLocalIso(new Date()),
 ): MonthlyDigest | null {
   const validTx = transactions.filter((t) => !t.ignorar_dashboard);
   const allMonths = getSortedUniqueMonths(validTx);
 
   if (allMonths.length < 1) return null;
 
-  // Most recent complete month = second to last if we have current partial month,
-  // otherwise the last one. We pick the last month that has data.
-  const targetMonth = allMonths.length >= 2
-    ? allMonths[allMonths.length - 2]
-    : allMonths[allMonths.length - 1];
+  // O "mês fechado" mais recente. Só tratamos o último mês com dados como parcial
+  // (e recuamos pro anterior) quando ele É o mês corrente. Escolher cegamente o
+  // penúltimo reportava o mês ERRADO sempre que o último mês já estava completo
+  // (ex.: importação feita no início do mês seguinte).
+  const currentMonth = today.substring(0, 7); // YYYY-MM
+  const lastMonth = allMonths[allMonths.length - 1];
+  const targetMonth =
+    lastMonth === currentMonth && allMonths.length >= 2
+      ? allMonths[allMonths.length - 2]
+      : lastMonth;
 
-  const prevMonth = allMonths.length >= 3
-    ? allMonths[allMonths.length - 3]
-    : null;
+  const targetIdx = allMonths.indexOf(targetMonth);
+  const prevMonth = targetIdx > 0 ? allMonths[targetIdx - 1] : null;
 
   const monthTx = validTx.filter((t) => getMonth(t) === targetMonth);
   const prevMonthTx = prevMonth

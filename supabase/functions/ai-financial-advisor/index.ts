@@ -16,6 +16,27 @@ serve(async (req) => {
     let systemPrompt = "";
     let userPrompt = "";
 
+    // Formatadores seguros: número ausente/NaN vira "—" em vez de "undefined"/"NaN".
+    // Sem isso, o prompt chegava com "R$ undefined (NaN%)" e o modelo INVENTAVA
+    // valores em cima do lixo, gerando relatórios errados.
+    const brl = (n: unknown, dec = 2): string => {
+      const v = typeof n === "number" && isFinite(n) ? n : null;
+      return v == null
+        ? "—"
+        : v.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    };
+    const pct = (n: unknown, dec = 0): string => {
+      const v = typeof n === "number" && isFinite(n) ? n : null;
+      return v == null ? "—" : v.toFixed(dec);
+    };
+
+    if (!context || typeof context !== "object") {
+      return new Response(JSON.stringify({ error: "Contexto ausente ou inválido" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     switch (type) {
       case "dashboard_insights": {
         systemPrompt = `Você é um consultor financeiro pessoal brasileiro, direto e técnico. Gere insights a partir SÓ dos dados fornecidos.
@@ -27,30 +48,30 @@ Regras (OBRIGATÓRIAS):
 - Não repita o que o usuário já vê (totais do mês). Interprete: o que mudou, o que é fora do padrão, o que decidir.
 - Máximo ~160 palavras. Markdown. No máximo 1 emoji por bullet, só se agregar.`;
         userPrompt = `Analise este resumo financeiro do mês:
-- Receita base: R$ ${context.receita}
-- Total despesas: R$ ${context.totalDespesas}
-- Total receitas extras: R$ ${context.totalReceitas}
-- Saldo projetado: R$ ${context.saldoProjetado}
-- % da renda gasta: ${context.percentGasto?.toFixed(1)}%
-- Reserva mínima configurada: R$ ${context.reserva}
-- Essenciais: R$ ${context.totalEssencial} (${context.pctEssencial?.toFixed(0)}%)
-- Não-essenciais: R$ ${context.totalNaoEssencial}
+- Receita base: R$ ${brl(context.receita)}
+- Total despesas: R$ ${brl(context.totalDespesas)}
+- Total receitas extras: R$ ${brl(context.totalReceitas)}
+- Saldo projetado: R$ ${brl(context.saldoProjetado)}
+- % da renda gasta: ${pct(context.percentGasto, 1)}%
+- Reserva mínima configurada: R$ ${brl(context.reserva)}
+- Essenciais: R$ ${brl(context.totalEssencial)} (${pct(context.pctEssencial)}%)
+- Não-essenciais: R$ ${brl(context.totalNaoEssencial)}
 
 Top categorias de gasto:
-${context.topCategorias?.map((c: any) => `- ${c.cat}: R$ ${c.total.toFixed(2)} (${c.pct.toFixed(0)}%)`).join('\n') || 'Nenhuma despesa'}
+${context.topCategorias?.length ? context.topCategorias.map((c: any) => `- ${c.cat}: R$ ${brl(c.total)} (${pct(c.pct)}%)`).join('\n') : 'Nenhuma despesa'}
 
 ${context.parcelasAtivas ? `Parcelas ativas: ${context.parcelasAtivas} compromissos futuros` : ''}
 ${context.faturasPendentes ? `Faturas de cartão pendentes: ${context.faturasPendentes}` : ''}
 
-${context.spendingTrends?.length ? `\nTendências de gastos por categoria:\n${context.spendingTrends.map((t: any) => `- ${t.categoria}: ${t.tendencia} (${t.variacao > 0 ? '+' : ''}${t.variacao.toFixed(0)}%), média recente R$ ${t.mediaRecente.toFixed(0)}`).join('\n')}` : ''}
+${context.spendingTrends?.length ? `\nTendências de gastos por categoria:\n${context.spendingTrends.map((t: any) => `- ${t.categoria}: ${t.tendencia} (${typeof t.variacao === 'number' && t.variacao > 0 ? '+' : ''}${pct(t.variacao)}%), média recente R$ ${brl(t.mediaRecente)}`).join('\n')}` : ''}
 
-${context.anomalies?.length ? `\nGastos anômalos detectados:\n${context.anomalies.map((a: any) => `- ${a.categoria} em ${a.mes}: R$ ${a.valor.toFixed(0)} (média R$ ${a.media.toFixed(0)}, excesso R$ ${a.excesso.toFixed(0)})`).join('\n')}` : ''}
+${context.anomalies?.length ? `\nGastos anômalos detectados:\n${context.anomalies.map((a: any) => `- ${a.categoria} em ${a.mes}: R$ ${brl(a.valor)} (média R$ ${brl(a.media)}, excesso R$ ${brl(a.excesso)})`).join('\n')}` : ''}
 
-${context.recurringCharges?.length ? `\nCobranças recorrentes identificadas (${context.recurringCharges.length} itens): total mensal estimado R$ ${context.recurringCharges.reduce((s: number, r: any) => s + r.valor, 0).toFixed(0)}` : ''}
+${context.recurringCharges?.length ? `\nCobranças recorrentes identificadas (${context.recurringCharges.length} itens): total mensal estimado R$ ${brl(context.recurringCharges.reduce((s: number, r: any) => s + (typeof r.valor === 'number' ? r.valor : 0), 0))}` : ''}
 
 ${context.healthScore ? `\nScore de saúde financeira: ${context.healthScore}/100 (${context.healthNivel})` : ''}
 
-${context.commitmentAvg ? `\nComprometimento médio da renda: ${context.commitmentAvg.toFixed(0)}%` : ''}
+${context.commitmentAvg != null ? `\nComprometimento médio da renda: ${pct(context.commitmentAvg)}%` : ''}
 ${context.commitmentTrend ? `Tendência de comprometimento: ${context.commitmentTrend}` : ''}`;
         break;
       }
@@ -64,11 +85,11 @@ Regras (OBRIGATÓRIAS):
 - Se fizer sentido cortar, diga um alvo concreto (ex: "voltar à média economiza R$ X/mês"). Se for essencial, foque em otimizar, não em cortar.
 - Sem conselho genérico. Máximo ~90 palavras. Markdown.`;
         userPrompt = `Categoria: ${context.categoria}
-Total gasto este mês: R$ ${context.totalCategoria}
-Percentual do total: ${context.pctTotal?.toFixed(1)}%
-Receita mensal: R$ ${context.receita}
+Total gasto este mês: R$ ${brl(context.totalCategoria)}
+Percentual do total: ${pct(context.pctTotal, 1)}%
+Receita mensal: R$ ${brl(context.receita)}
 Quantidade de transações: ${context.qtdTransacoes}
-${context.mediaHistorica ? `Média histórica (3 meses): R$ ${context.mediaHistorica.toFixed(2)}` : ''}
+${context.mediaHistorica != null ? `Média histórica (3 meses): R$ ${brl(context.mediaHistorica)}` : ''}
 É categoria essencial: ${context.essencial ? 'Sim' : 'Não'}`;
         break;
       }
@@ -83,28 +104,28 @@ Regras de resposta (OBRIGATÓRIAS):
 - Se houver venda de imóvel financiando a entrada, avalie se o líquido cobre entrada + custos + reserva, e o risco de timing (vender antes de comprar).
 - Não repita todos os números de volta; interprete. Máximo ~180 palavras. Português do Brasil. Markdown.`;
         userPrompt = `Simulação de financiamento (Caixa, SAC):
-- Valor do imóvel: R$ ${context.valorImovel}
-- Entrada: R$ ${context.entrada} (${context.percEntrada?.toFixed(1)}%)
-- Valor financiado: R$ ${context.financiado}
-- Taxa de juros: ${context.taxaAnual}% a.a.
+- Valor do imóvel: R$ ${brl(context.valorImovel)}
+- Entrada: R$ ${brl(context.entrada)} (${pct(context.percEntrada, 1)}%)
+- Valor financiado: R$ ${brl(context.financiado)}
+- Taxa de juros: ${pct(context.taxaAnual, 2)}% a.a.
 - Prazo: ${context.prazoAnos} anos
-- Parcela inicial (SAC, decrescente): R$ ${context.parcelaInicial}
-- Total de juros no prazo: R$ ${context.totalJuros}
-- % da renda comprometida pela parcela: ${context.percRenda?.toFixed(1)}%
+- Parcela inicial (SAC, decrescente): R$ ${brl(context.parcelaInicial)}
+- Total de juros no prazo: R$ ${brl(context.totalJuros)}
+- % da renda comprometida pela parcela: ${pct(context.percRenda, 1)}%
 - Semáforo do checklist: ${context.semaforo}
 
 Contexto financeiro:
-- Renda bruta familiar: R$ ${context.receitaMensal}
-- Outras dívidas mensais: R$ ${context.despesasMensais}
-- Saldo livre hoje: R$ ${context.saldoLivre}
-- Saldo livre após a parcela: R$ ${context.saldoComFinanciamento}
+- Renda bruta familiar: R$ ${brl(context.receitaMensal)}
+- Outras dívidas mensais: R$ ${brl(context.despesasMensais)}
+- Saldo livre hoje: R$ ${brl(context.saldoLivre)}
+- Saldo livre após a parcela: R$ ${brl(context.saldoComFinanciamento)}
 ${context.temVenda ? `
 Entrada financiada pela VENDA do imóvel atual:
-- Valor de venda: R$ ${context.valorVendaImovel}
-- Líquido da venda (após quitar saldo/IPTU/IR/custos): R$ ${context.liquidoVenda}
-- Capital total para a compra: R$ ${context.capitalParaCompra}
-- Reserva de emergência necessária: R$ ${context.reservaNecessaria}
-- Sobra após entrada + custos + reserva: R$ ${context.capitalRestante}` : ''}`;
+- Valor de venda: R$ ${brl(context.valorVendaImovel)}
+- Líquido da venda (após quitar saldo/IPTU/IR/custos): R$ ${brl(context.liquidoVenda)}
+- Capital total para a compra: R$ ${brl(context.capitalParaCompra)}
+- Reserva de emergência necessária: R$ ${brl(context.reservaNecessaria)}
+- Sobra após entrada + custos + reserva: R$ ${brl(context.capitalRestante)}` : ''}`;
         break;
       }
 
@@ -121,17 +142,17 @@ Proibido frase genérica sem número. Máximo ~220 palavras no total.`;
         userPrompt = `Análise de cenários para compra de imóvel:
 
 Dados do usuário (baseados em ${c.mesesAnalisados} meses de dados reais):
-- Receita média mensal: R$ ${c.receita}
-- Imóvel: R$ ${c.parametros.valorImovel} | Entrada: R$ ${c.parametros.entrada}
-- Saldo devedor carro: R$ ${c.parametros.saldoDevedorCarro}
-- Parcela carro: R$ ${c.parametros.parcelaCarro}/mês
-- Meses restantes carro: ${c.parametros.mesesRestantesCarro}
-- Empréstimos ativos: R$ ${c.parametros.emprestimosAtivos}/mês
+- Receita média mensal: R$ ${brl(c.receita)}
+- Imóvel: R$ ${brl(c.parametros?.valorImovel)} | Entrada: R$ ${brl(c.parametros?.entrada)}
+- Saldo devedor carro: R$ ${brl(c.parametros?.saldoDevedorCarro)}
+- Parcela carro: R$ ${brl(c.parametros?.parcelaCarro)}/mês
+- Meses restantes carro: ${c.parametros?.mesesRestantesCarro}
+- Empréstimos ativos: R$ ${brl(c.parametros?.emprestimosAtivos)}/mês
 
-Cenário 0 (Atual): Saldo livre R$ ${c.cenario0.saldo}/mês | 12 meses: R$ ${c.cenario0.saldo12}
-Cenário 1 (Compra+Carro): Saldo R$ ${c.cenario1.saldo}/mês | Δ ${c.cenario1.delta}/mês
-Cenário 2 (Quita Carro): Saldo R$ ${c.cenario2.saldo}/mês | Δ ${c.cenario2.delta}/mês | Custo quitar: R$ ${c.cenario2.custoQuitar}
-Cenário 3 (Carro Quita Sozinho): Saldo com carro R$ ${c.cenario3.saldoComCarro}, sem carro R$ ${c.cenario3.saldoSemCarro}, melhora no mês ${c.cenario3.mesMelhora}`;
+Cenário 0 (Atual): Saldo livre R$ ${brl(c.cenario0?.saldo)}/mês | 12 meses: R$ ${brl(c.cenario0?.saldo12)}
+Cenário 1 (Compra+Carro): Saldo R$ ${brl(c.cenario1?.saldo)}/mês | Δ ${brl(c.cenario1?.delta)}/mês
+Cenário 2 (Quita Carro): Saldo R$ ${brl(c.cenario2?.saldo)}/mês | Δ ${brl(c.cenario2?.delta)}/mês | Custo quitar: R$ ${brl(c.cenario2?.custoQuitar)}
+Cenário 3 (Carro Quita Sozinho): Saldo com carro R$ ${brl(c.cenario3?.saldoComCarro)}, sem carro R$ ${brl(c.cenario3?.saldoSemCarro)}, melhora no mês ${c.cenario3?.mesMelhora}`;
         break;
       }
 
@@ -149,13 +170,13 @@ Regras de resposta (OBRIGATÓRIAS):
 - NADA de conselho genérico ("gaste menos", "faça reserva") sem número. Português do Brasil.`;
         const d = context;
         userPrompt = `Situação de dívidas:
-- Total restante: R$ ${d.totalRestante?.toFixed(0)}
-- Compromisso mensal: R$ ${d.totalMensal?.toFixed(0)}${d.comprometimentoRenda != null ? ` (${d.comprometimentoRenda.toFixed(0)}% da renda de R$ ${d.rendaMensal?.toFixed(0)})` : ''}
+- Total restante: R$ ${brl(d.totalRestante, 0)}
+- Compromisso mensal: R$ ${brl(d.totalMensal, 0)}${d.comprometimentoRenda != null ? ` (${pct(d.comprometimentoRenda)}% da renda de R$ ${brl(d.rendaMensal, 0)})` : ''}
 - Livre de dívidas em: ${d.mesLiberdade} (${d.mesesAteLiberdade} meses no ritmo atual)
-- Juros evitáveis quitando à vista (onde a taxa é conhecida): R$ ${d.jurosEvitaveis?.toFixed(0)}
+- Juros evitáveis quitando à vista (onde a taxa é conhecida): R$ ${brl(d.jurosEvitaveis, 0)}
 
 Dívidas (ordenadas por prioridade sugerida):
-${d.dividas?.map((x: any) => `- ${x.nome}: R$ ${x.valorMensal?.toFixed(0)}/mês, ${x.parcelasRestantes}x restantes, R$ ${x.valorRestante?.toFixed(0)} no total, taxa ${x.taxaAno != null ? x.taxaAno + '% a.a.' : 'desconhecida'}`).join('\n')}`;
+${d.dividas?.map((x: any) => `- ${x.nome}: R$ ${brl(x.valorMensal, 0)}/mês, ${x.parcelasRestantes}x restantes, R$ ${brl(x.valorRestante, 0)} no total, taxa ${x.taxaAno != null ? pct(x.taxaAno) + '% a.a.' : 'desconhecida'}`).join('\n')}`;
         break;
       }
 
@@ -169,14 +190,14 @@ Regras (OBRIGATÓRIAS):
 - Proibido conselho genérico ("economizem", "controlem gastos") sem número. Máximo ~160 palavras. Markdown. Português do Brasil.`;
         const c = context;
         userPrompt = `Orçamento do casal${c.mesCorrente ? ' (mês em andamento)' : ' (mês fechado)'}:
-- Receita esperada: R$ ${c.receita?.toFixed(0)}
-- Gasto até agora: R$ ${c.despesaMes?.toFixed(0)} | Projeção fim do mês: R$ ${c.despesaProjetada?.toFixed(0)}
-- Sobra projetada: R$ ${c.sobraProjetada?.toFixed(0)}
-- Essenciais: R$ ${c.essenciais?.toFixed(0)} (${c.pctEssenciais?.toFixed(0)}% — meta 50%)
-- Não-essenciais: R$ ${c.naoEssenciais?.toFixed(0)}
-- Poupança/sobra: ${c.pctPoupanca?.toFixed(0)}% (meta 20%)
-${c.alertas?.length ? `\nAlertas por categoria:\n${c.alertas.map((a: any) => `- ${a.categoria}: ${a.tipo} (gasto R$ ${a.gastoMes?.toFixed(0)}, projeção R$ ${a.projecao?.toFixed(0)}${a.meta != null ? `, meta R$ ${a.meta?.toFixed(0)}` : `, média R$ ${a.media?.toFixed(0)}`})`).join('\n')}` : ''}
-${c.categorias?.length ? `\nGasto por categoria (mês / média):\n${c.categorias.map((x: any) => `- ${x.categoria}: R$ ${x.gastoMes?.toFixed(0)} / média R$ ${x.media?.toFixed(0)}${x.meta != null ? ` (meta R$ ${x.meta?.toFixed(0)})` : ''}`).join('\n')}` : ''}`;
+- Receita esperada: R$ ${brl(c.receita, 0)}
+- Gasto até agora: R$ ${brl(c.despesaMes, 0)} | Projeção fim do mês: R$ ${brl(c.despesaProjetada, 0)}
+- Sobra projetada: R$ ${brl(c.sobraProjetada, 0)}
+- Essenciais: R$ ${brl(c.essenciais, 0)} (${pct(c.pctEssenciais)}% — meta 50%)
+- Não-essenciais: R$ ${brl(c.naoEssenciais, 0)}
+- Poupança/sobra: ${pct(c.pctPoupanca)}% (meta 20%)
+${c.alertas?.length ? `\nAlertas por categoria:\n${c.alertas.map((a: any) => `- ${a.categoria}: ${a.tipo} (gasto R$ ${brl(a.gastoMes, 0)}, projeção R$ ${brl(a.projecao, 0)}${a.meta != null ? `, meta R$ ${brl(a.meta, 0)}` : `, média R$ ${brl(a.media, 0)}`})`).join('\n')}` : ''}
+${c.categorias?.length ? `\nGasto por categoria (mês / média):\n${c.categorias.map((x: any) => `- ${x.categoria}: R$ ${brl(x.gastoMes, 0)} / média R$ ${brl(x.media, 0)}${x.meta != null ? ` (meta R$ ${brl(x.meta, 0)})` : ''}`).join('\n')}` : ''}`;
         break;
       }
 
@@ -195,6 +216,7 @@ ${c.categorias?.length ? `\nGasto por categoria (mês / média):\n${c.categorias
       },
       body: JSON.stringify({
         model: "google/gemini-3-flash-preview",
+        temperature: 0.3,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -226,9 +248,19 @@ ${c.categorias?.length ? `\nGasto por categoria (mês / média):\n${c.categorias
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "Sem resposta da IA";
+    const content = data.choices?.[0]?.message?.content;
 
-    return new Response(JSON.stringify({ analysis: content }), {
+    // Valida a resposta: se vier vazia ou for "lixo" sem nenhum número, devolve
+    // erro em vez de exibir um texto genérico/inventado como se fosse análise.
+    if (typeof content !== "string" || content.trim().length < 10) {
+      console.error("AI empty/short response:", JSON.stringify(data).slice(0, 500));
+      return new Response(
+        JSON.stringify({ error: "A IA não retornou uma análise utilizável. Tente novamente." }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    return new Response(JSON.stringify({ analysis: content.trim() }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

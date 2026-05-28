@@ -163,28 +163,34 @@ export function calculateCategoryAverages(
   
   // Group by category and month
   const catMonths: Record<string, { months: Record<string, number>; categoria_id: string | null }> = {};
-  
+  const janelaMeses = new Set<string>(); // todos os meses com despesa (a janela)
+
   for (const t of despesas) {
     const cat = t.categoria;
     const month = t.mes_competencia || t.data.substring(0, 7);
+    janelaMeses.add(month);
 
     if (!catMonths[cat]) catMonths[cat] = { months: {}, categoria_id: t.categoria_id };
     if (!catMonths[cat].months[month]) catMonths[cat].months[month] = 0;
     catMonths[cat].months[month] += t.valor;
   }
-  
+
+  // Denominador = nº de meses da JANELA (não só os meses em que a categoria teve
+  // gasto). Dividir por meses-presentes superestimava categorias esporádicas
+  // (uma compra em 1 de 6 meses virava "média mensal" cheia).
+  const denom = Math.max(1, janelaMeses.size);
   const averages: Record<string, { average: number; monthCount: number; categoria_id: string | null }> = {};
-  
+
   for (const [cat, { months, categoria_id }] of Object.entries(catMonths)) {
     const values = Object.values(months);
     const total = values.reduce((s, v) => s + v, 0);
     averages[cat] = {
-      average: total / values.length,
+      average: total / denom,
       monthCount: values.length,
       categoria_id,
     };
   }
-  
+
   return averages;
 }
 
@@ -238,12 +244,17 @@ export function generateProjections(
     overrideMap[`${o.mes}|${o.categoria_nome}|${o.tipo}`] = o;
   }
   
-  // Generate months from startMonth to Dec 2026
+  // Projeta do mês inicial até Dez do ano corrente — mas SEMPRE pelo menos 12
+  // meses à frente do início, pra nunca gerar tabela vazia (ex: rodando em
+  // dez/2026 ou com startMonth em 2027, "Dez do ano corrente" ficaria antes do
+  // início e o loop não rodaria → projeção em branco).
   const now = new Date();
-  const start = startMonth 
+  const start = startMonth
     ? new Date(parseInt(startMonth.split('-')[0]), parseInt(startMonth.split('-')[1]) - 1, 1)
     : new Date(now.getFullYear(), now.getMonth(), 1);
-  const endDate = new Date(now.getFullYear(), 11, 1); // Dec of current year
+  const fimAno = new Date(now.getFullYear(), 11, 1); // Dez do ano corrente
+  const min12 = new Date(start.getFullYear(), start.getMonth() + 12, 1); // 12 meses à frente
+  const endDate = fimAno >= min12 ? fimAno : min12;
   
   const projections: MonthProjection[] = [];
   
@@ -330,7 +341,9 @@ export function generateProjections(
     });
     const totalDespesas = despesaCategorias.reduce((s, c) => s + c.valor, 0);
     const receitaOverride = manualOverrides.find(o => o.mes === mes && o.tipo === 'receita');
-    const totalReceitas = receitaOverride ? receitaOverride.valor : (revenueAvg || receitaBase);
+    // Prefere a RENDA BASE configurada (mais confiável) à média histórica, que é
+    // calculada só sobre meses com receita lançada e tende a superestimar.
+    const totalReceitas = receitaOverride ? receitaOverride.valor : (receitaBase > 0 ? receitaBase : revenueAvg);
     
     projections.push({
       mes,
