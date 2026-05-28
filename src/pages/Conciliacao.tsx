@@ -211,6 +211,57 @@ export default function ConciliacaoPage() {
     onError: (e: any) => toast({ title: 'Erro ao conciliar', description: e?.message, variant: 'destructive' }),
   });
 
+  // ── Transferências entre contas: par "saída numa conta ↔ entrada noutra" com
+  //    mesmo valor e datas próximas (≤3 dias). NÃO é receita nem despesa — é
+  //    movimentação interna. Você confirma; aí os dois lados viram transferência
+  //    (ignorar_dashboard) e param de inflar receita/despesa.
+  const transferencias = useMemo(() => {
+    if (!contas || !txs) return [] as { saida: Tx; entrada: Tx; contaSaida: string; contaEntrada: string }[];
+    const nome = (id: string) => contas.find((c) => c.id === id)?.nome || '?';
+    const elegivel = (t: Tx) =>
+      !t.ignorar_dashboard && !isFaturaPayment(t.descricao) && !isFaturaTotalMarker(t.descricao) && !isSaldoAnteriorFatura(t.descricao);
+    const dias = (a: string, b: string) => Math.abs(new Date(a + 'T00:00:00').getTime() - new Date(b + 'T00:00:00').getTime()) / 86400000;
+
+    const entradasPorValor = new Map<string, Tx[]>();
+    for (const r of txs) {
+      if (r.tipo !== 'receita' || !elegivel(r)) continue;
+      const k = Math.abs(Number(r.valor)).toFixed(2);
+      (entradasPorValor.get(k) || entradasPorValor.set(k, []).get(k)!).push(r);
+    }
+    const usados = new Set<string>();
+    const pares: { saida: Tx; entrada: Tx; contaSaida: string; contaEntrada: string }[] = [];
+    for (const d of txs) {
+      if (d.tipo !== 'despesa' || !elegivel(d) || usados.has(d.id)) continue;
+      const k = Math.abs(Number(d.valor)).toFixed(2);
+      const cands = (entradasPorValor.get(k) || []).filter(
+        (r) => r.conta_id !== d.conta_id && !usados.has(r.id) && dias(d.data, r.data) <= 3,
+      );
+      if (cands.length) {
+        const r = cands[0];
+        usados.add(d.id); usados.add(r.id);
+        pares.push({ saida: d, entrada: r, contaSaida: nome(d.conta_id), contaEntrada: nome(r.conta_id) });
+      }
+    }
+    return pares.sort((a, b) => (b.saida.data || '').localeCompare(a.saida.data || ''));
+  }, [contas, txs]);
+
+  const marcarTransferenciaMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase.from('transacoes')
+        .update({ ignorar_dashboard: true, categoria: 'Transferência' })
+        .in('id', ids).eq('user_id', user!.id);
+      if (error) throw error;
+    },
+    onSuccess: (_d, ids) => {
+      queryClient.invalidateQueries({ queryKey: ['conciliacao-txs'] });
+      queryClient.invalidateQueries({ queryKey: ['transacoes'] });
+      queryClient.invalidateQueries({ queryKey: ['saldos'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast({ title: 'Transferência marcada', description: `${ids.length / 2} par(es) deixaram de contar como receita/despesa.` });
+    },
+    onError: (e: any) => toast({ title: 'Erro', description: e?.message, variant: 'destructive' }),
+  });
+
   const analise = useMemo(() => {
     if (!contas || !txs) return [];
     return contas.map((c) => {
@@ -355,6 +406,51 @@ export default function ConciliacaoPage() {
                 </div>
               );
             })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Transferências entre contas: pares saída↔entrada (mesmo valor, ≤3 dias) */}
+      {transferencias.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-base">
+              <span className="flex items-center gap-2">
+                <Link2 className="h-4 w-4 text-primary" />
+                Transferências entre contas ({transferencias.length})
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={marcarTransferenciaMutation.isPending}
+                onClick={() => marcarTransferenciaMutation.mutate(transferencias.flatMap((t) => [t.saida.id, t.entrada.id]))}
+              >
+                Marcar todas
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p className="text-xs text-muted-foreground">
+              Movimentações entre suas contas (mesmo valor, datas próximas). Não são receita nem despesa — marque como transferência pra não inflar os totais.
+            </p>
+            {transferencias.map((t) => (
+              <div key={t.saida.id} className="flex items-center justify-between gap-2 rounded border p-2">
+                <span className="truncate text-xs">
+                  <span className="font-medium">{formatCurrency(Number(t.saida.valor))}</span>
+                  {' · '}<span className="text-destructive">saída {t.contaSaida}</span> ({t.saida.data})
+                  {' → '}<span className="text-success">entrada {t.contaEntrada}</span> ({t.entrada.data})
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="shrink-0 h-7"
+                  disabled={marcarTransferenciaMutation.isPending}
+                  onClick={() => marcarTransferenciaMutation.mutate([t.saida.id, t.entrada.id])}
+                >
+                  <Link2 className="mr-1 h-3.5 w-3.5" /> É transferência
+                </Button>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}
