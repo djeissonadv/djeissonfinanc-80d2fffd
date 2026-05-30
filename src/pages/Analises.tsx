@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -6,22 +6,50 @@ import { useTodayIso } from '@/hooks/useTodayIso';
 import { fetchAllRows } from '@/lib/supabase-fetch';
 import { useFontesReceita } from '@/hooks/useFontesReceita';
 import { MonthSelector } from '@/components/MonthSelector';
-import { SmartInsightsCard } from '@/components/dashboard/SmartInsightsCard';
-import { FinancialHealthCard } from '@/components/dashboard/FinancialHealthCard';
-import { AiInsightsCard } from '@/components/dashboard/AiInsightsCard';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { TransactionRecord } from '@/lib/projection-engine';
-import { detectSpendingTrends, detectAnomalies, detectRecurringCharges } from '@/lib/spending-patterns';
+import {
+  detectSpendingTrends,
+  detectAnomalies,
+  detectRecurringCharges,
+} from '@/lib/spending-patterns';
 import { calculateFinancialHealth } from '@/lib/financial-health';
 import { calculateIncomeCommitment } from '@/lib/income-commitment';
 import { getMonthRange, formatCurrency } from '@/lib/format';
-import { CATEGORIAS_CONFIG, getCategoriaColor } from '@/types/database.types';
-import { useCategorias } from '@/hooks/useCategorias';
+import {
+  buildMonthlyFlow,
+  buildCategoryComposition,
+  computeMonthlyKpis,
+  comparePeriods,
+} from '@/lib/analytics-engine';
+import { KpiHeroStrip } from '@/components/analytics/KpiHeroStrip';
+import { CashflowChart } from '@/components/analytics/CashflowChart';
+import { CategoryComposition } from '@/components/analytics/CategoryComposition';
+import { TrendsList } from '@/components/analytics/TrendsList';
+import {
+  AnomaliesList,
+  RecurringChargesList,
+} from '@/components/analytics/AnomaliesAndRecurring';
+import {
+  DeepAnalysisCard,
+  AskClaudeCard,
+} from '@/components/analytics/ClaudeAnalysisCards';
 
+/**
+ * Página Análises — reformada.
+ *
+ * Layout:
+ *   1. Header: título + month selector
+ *   2. Hero KPIs: saldo livre / poupança / score / destaque
+ *   3. Charts grid: fluxo de caixa (2 cols) + composição categorias (1 col)
+ *   4. Insights grid: tendências + anomalias + recorrentes
+ *   5. Claude grid: análise profunda + Q&A
+ *
+ * Toda computação pesada é memoizada e o contexto pro Claude vem pronto.
+ */
 export default function AnalisesPage() {
   const { user } = useAuth();
-  const { getParentForCategoria } = useCategorias();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -34,216 +62,229 @@ export default function AnalisesPage() {
   const { data: config } = useQuery({
     queryKey: ['config', user?.id],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('configuracoes')
-        .select('*')
-        .eq('user_id', user!.id)
-        .single();
+      const { data } = await supabase.from('configuracoes').select('*').eq('user_id', user!.id).single();
       return data;
     },
     enabled: !!user,
   });
-
   const reserva = config?.reserva_minima || 2000;
 
-  // Current month transactions
-  const { data: transacoesMes } = useQuery({
-    queryKey: ['analises', 'transacoes-mes', user?.id, start, end, billingMonth],
-    queryFn: async () => {
-      const byCompetencia = await fetchAllRows(() => supabase
-        .from('transacoes')
-        .select('*')
-        .eq('user_id', user!.id)
-        .eq('ignorar_dashboard', false)
-        .eq('mes_competencia', billingMonth));
-
-      const byDate = await fetchAllRows(() => supabase
-        .from('transacoes')
-        .select('*')
-        .eq('user_id', user!.id)
-        .eq('ignorar_dashboard', false)
-        .is('mes_competencia', null)
-        .gte('data', start)
-        .lte('data', end));
-
-      const all = [...byCompetencia, ...byDate];
-      const seen = new Set<string>();
-      return all.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
-    },
-    enabled: !!user,
-  });
-
-  // All transactions for pattern analysis (last 12 months)
+  // Últimos 12 meses — base pra todos os gráficos/insights/Claude.
   const { data: allTransactions, isLoading } = useQuery({
     queryKey: ['analises', 'all-transacoes', user?.id],
     queryFn: async () => {
       const oneYearAgo = new Date();
       oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
       const startDate = `${oneYearAgo.getFullYear()}-${String(oneYearAgo.getMonth() + 1).padStart(2, '0')}-01`;
-      const data = await fetchAllRows<TransactionRecord>(() => supabase
-        .from('transacoes')
-        .select('data, mes_competencia, descricao, valor, tipo, categoria, categoria_id, parcela_atual, parcela_total, grupo_parcela, ignorar_dashboard, essencial, conta_id')
-        .eq('user_id', user!.id)
-        .gte('data', startDate));
+      const data = await fetchAllRows<TransactionRecord>(() =>
+        supabase
+          .from('transacoes')
+          .select(
+            'data, mes_competencia, descricao, valor, tipo, categoria, categoria_id, parcela_atual, parcela_total, grupo_parcela, ignorar_dashboard, essencial, conta_id',
+          )
+          .eq('user_id', user!.id)
+          .gte('data', startDate),
+      );
       return data;
     },
     enabled: !!user,
   });
 
-  // Saldo atual — mirrors Dashboard: all debit-account transactions up to today
-  // (future-dated entries excluded), including ignorar_dashboard ones (fatura
-  // payments are internal transfers but still move the bank balance).
+  // Saldo atual — visão de bolso.
   const { data: saldoAtual } = useQuery({
     queryKey: ['analises', 'saldo-total', user?.id, todayIso],
     queryFn: async () => {
-      const { data: contasList } = await supabase.from('contas').select('id, saldo_inicial, tipo').eq('user_id', user!.id);
+      const { data: contasList } = await supabase
+        .from('contas')
+        .select('id, saldo_inicial, tipo')
+        .eq('user_id', user!.id);
       if (!contasList?.length) return 0;
-      const debitAccounts = contasList.filter(c => c.tipo === 'debito');
+      const debitAccounts = contasList.filter((c) => c.tipo === 'debito');
       let total = debitAccounts.reduce((s, c) => s + (c.saldo_inicial || 0), 0);
-      const debitIds = debitAccounts.map(c => c.id);
-      if (debitIds.length) {
-        const txs = await fetchAllRows<{ valor: number; tipo: string }>(() => supabase.from('transacoes').select('valor, tipo').in('conta_id', debitIds).eq('user_id', user!.id).neq('categoria', 'Saldo Inicial').lte('data', todayIso));
-        for (const t of txs) {
-          total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
-        }
+      const ids = debitAccounts.map((c) => c.id);
+      if (ids.length) {
+        const txs = await fetchAllRows<{ valor: number; tipo: string }>(() =>
+          supabase
+            .from('transacoes')
+            .select('valor, tipo')
+            .in('conta_id', ids)
+            .eq('user_id', user!.id)
+            .neq('categoria', 'Saldo Inicial')
+            .lte('data', todayIso),
+        );
+        for (const t of txs) total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
       }
       return total;
     },
     enabled: !!user,
   });
 
-  // Saldo anterior — balance across debit accounts strictly before the selected
-  // month's start. Same logic as Dashboard so the two pages agree.
-  const { data: saldoAnterior } = useQuery({
-    queryKey: ['analises', 'saldo-anterior', user?.id, start],
-    queryFn: async () => {
-      const { data: contasList } = await supabase.from('contas').select('id, saldo_inicial, tipo, data_abertura').eq('user_id', user!.id);
-      if (!contasList?.length) return 0;
-      const debitAccounts = contasList.filter(c => c.tipo === 'debito');
-      let total = debitAccounts.reduce((s, c) => {
-        if (!c.data_abertura || c.data_abertura < start) return s + (c.saldo_inicial || 0);
-        return s;
-      }, 0);
-      const debitIds = debitAccounts.map(c => c.id);
-      if (debitIds.length) {
-        const txs = await fetchAllRows<{ valor: number; tipo: string }>(() => supabase.from('transacoes').select('valor, tipo').in('conta_id', debitIds).eq('user_id', user!.id).neq('categoria', 'Saldo Inicial').lt('data', start));
-        for (const t of txs) {
-          total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
-        }
-      }
-      return total;
-    },
-    enabled: !!user,
-  });
+  // ---------------------------------------------------------------------
+  // Memos pesados — fluxo 12m, kpis mês, composição, padrões, health
+  // ---------------------------------------------------------------------
+  const flow12 = useMemo(
+    () => (allTransactions ? buildMonthlyFlow(allTransactions, 12) : []),
+    [allTransactions],
+  );
+  const periodCompare = useMemo(() => comparePeriods(flow12, 3), [flow12]);
 
-  // Credit cards for pending faturas count
-  const { data: contas } = useQuery({
-    queryKey: ['contas', user?.id],
-    queryFn: async () => {
-      const { data } = await supabase.from('contas').select('*').eq('user_id', user!.id);
-      return data || [];
-    },
-    enabled: !!user,
-  });
+  const kpisMes = useMemo(
+    () => (allTransactions ? computeMonthlyKpis(allTransactions, billingMonth) : null),
+    [allTransactions, billingMonth],
+  );
 
-  const creditCards = contas?.filter(c => c.tipo === 'credito') || [];
+  const composition = useMemo(
+    () => (allTransactions ? buildCategoryComposition(allTransactions, billingMonth) : []),
+    [allTransactions, billingMonth],
+  );
 
-  const totalDespesas = transacoesMes?.filter(t => t.tipo === 'despesa').reduce((s, t) => s + Number(t.valor), 0) || 0;
-  const totalReceitas = transacoesMes?.filter(t => t.tipo === 'receita').reduce((s, t) => s + Number(t.valor), 0) || 0;
-  const percentGasto = totalReceitas > 0 ? (totalDespesas / totalReceitas) * 100 : (totalDespesas > 0 ? 100 : 0);
-  const totalEssencial = transacoesMes?.filter(t => t.tipo === 'despesa' && t.essencial).reduce((s, t) => s + Number(t.valor), 0) || 0;
-  const totalNaoEssencial = totalDespesas - totalEssencial;
-  const pctEssencial = totalDespesas > 0 ? (totalEssencial / totalDespesas) * 100 : 0;
-  // Disponível no mês = saldo anterior + receitas do mês - despesas do mês.
-  // (Mesma definição do Dashboard, sem o componente de contas a pagar/receber,
-  // que não é carregado nesta página de análise.)
-  const disponivel = (saldoAnterior || 0) + totalReceitas - totalDespesas;
+  const trends = useMemo(
+    () => (allTransactions ? detectSpendingTrends(allTransactions) : []),
+    [allTransactions],
+  );
+  const anomalies = useMemo(
+    () => (allTransactions ? detectAnomalies(allTransactions) : []),
+    [allTransactions],
+  );
+  const recurring = useMemo(
+    () => (allTransactions ? detectRecurringCharges(allTransactions) : []),
+    [allTransactions],
+  );
 
-  const categoryRanking = Object.entries(
-    transacoesMes
-      ?.filter(t => t.tipo === 'despesa')
-      .reduce((acc, t) => {
-        let catName = t.categoria;
-        let catColor = getCategoriaColor(catName);
-        if (t.categoria_id) {
-          const parent = getParentForCategoria(t.categoria_id);
-          if (parent) {
-            catName = parent.nome;
-            catColor = parent.cor || getCategoriaColor(catName);
-          }
-        }
-        if (!acc[catName]) acc[catName] = { total: 0, color: catColor };
-        acc[catName].total += Number(t.valor);
-        return acc;
-      }, {} as Record<string, { total: number; color: string }>) || {}
-  )
-    .map(([cat, { total, color }]) => ({ cat, total, color, pct: totalDespesas > 0 ? (total / totalDespesas) * 100 : 0 }))
-    .sort((a, b) => b.total - a.total);
+  const health = useMemo(() => {
+    if (!allTransactions) return null;
+    return calculateFinancialHealth({
+      transactions: allTransactions,
+      receitaBase,
+      reservaMinima: reserva,
+      saldoAtual: saldoAtual || 0,
+    });
+  }, [allTransactions, receitaBase, reserva, saldoAtual]);
 
-  if (isLoading) {
+  const commitment = useMemo(
+    () => (allTransactions ? calculateIncomeCommitment({ transactions: allTransactions, receitaBase }) : null),
+    [allTransactions, receitaBase],
+  );
+
+  // Destaque do mês (top categoria) — vai pro KPI hero
+  const destaque = composition[0]
+    ? { titulo: `Maior gasto: ${composition[0].categoria}`, valor: formatCurrency(composition[0].valor) }
+    : undefined;
+
+  // ---------------------------------------------------------------------
+  // Contextos pro Claude (montados uma vez, reusados nos cards)
+  // ---------------------------------------------------------------------
+  const deepCtx = useMemo(
+    () => ({
+      receitaBase,
+      saldoAtual: saldoAtual || 0,
+      reservaMinima: reserva,
+      healthScore: health?.score,
+      healthNivel: health?.nivel,
+      monthlySummary: flow12.map((f) => ({
+        mes: f.label,
+        receita: f.receita,
+        despesa: f.despesa,
+        sobra: f.sobra,
+      })),
+      totalDespesa3m: periodCompare?.despesaRecente,
+      totalDespesa3mPrev: periodCompare?.despesaAnterior,
+      topCategories: composition.slice(0, 8).map((s) => ({
+        cat: s.categoria,
+        total: s.valor,
+        pct: s.pct,
+      })),
+      spendingTrends: trends.filter((t) => t.tendencia !== 'estavel').slice(0, 8),
+      anomalies: anomalies.slice(0, 5),
+      recurringCharges: recurring.slice(0, 8),
+      parcelasAtivas: kpisMes?.parcelasMes,
+      commitmentAvg: commitment?.resumo.mediaComprometimento,
+    }),
+    [receitaBase, saldoAtual, reserva, health, flow12, periodCompare, composition, trends, anomalies, recurring, kpisMes, commitment],
+  );
+
+  const askCtx = useMemo(
+    () => ({
+      receitaBase,
+      saldoAtual: saldoAtual || 0,
+      despesaMes: kpisMes?.despesa,
+      receitaMes: kpisMes?.receita,
+      healthScore: health?.score,
+      topCategories: composition.slice(0, 6).map((s) => ({ cat: s.categoria, total: s.valor })),
+      parcelasAtivas: kpisMes?.parcelasMes,
+      commitmentAvg: commitment?.resumo.mediaComprometimento,
+    }),
+    [receitaBase, saldoAtual, kpisMes, health, composition, commitment],
+  );
+
+  if (isLoading || !allTransactions) {
     return (
-      <div className="grid gap-4 md:grid-cols-2">
-        {[1, 2, 3].map(i => (
-          <Card key={i}><CardContent className="p-6"><Skeleton className="h-32" /></CardContent></Card>
-        ))}
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-64" />
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i}><CardContent className="p-6"><Skeleton className="h-16" /></CardContent></Card>
+          ))}
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="md:col-span-2"><CardContent className="p-6"><Skeleton className="h-64" /></CardContent></Card>
+          <Card><CardContent className="p-6"><Skeleton className="h-64" /></CardContent></Card>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Análises</h1>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Análises</h1>
+          <p className="text-sm text-muted-foreground">Visão profunda dos últimos 12 meses + IA por Claude</p>
+        </div>
         <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
       </div>
 
+      {/* 1. Hero KPIs */}
+      <KpiHeroStrip
+        saldoLivreMes={kpisMes?.saldoLivre || 0}
+        taxaPoupanca={kpisMes?.taxaPoupanca || 0}
+        healthScore={health?.score || 0}
+        healthNivel={health?.nivel || '—'}
+        destaqueMes={destaque}
+      />
+
+      {/* 2. Charts: fluxo 12m + composição categorias */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="md:col-span-2">
+          <CashflowChart
+            flow={flow12}
+            description={
+              periodCompare
+                ? `3 últimos vs 3 anteriores: receita ${periodCompare.deltaReceita >= 0 ? '+' : ''}${periodCompare.deltaReceita.toFixed(0)}% · despesa ${periodCompare.deltaDespesa >= 0 ? '+' : ''}${periodCompare.deltaDespesa.toFixed(0)}%`
+                : undefined
+            }
+          />
+        </div>
+        <CategoryComposition slices={composition} description={`Despesas do mês ${billingMonth}`} />
+      </div>
+
+      {/* 3. Insights: tendências + anomalias + recorrentes */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <TrendsList trends={trends} />
+        <AnomaliesList anomalies={anomalies} />
+        <RecurringChargesList charges={recurring} />
+      </div>
+
+      {/* 4. IA Claude — análise profunda + Q&A */}
       <div className="grid gap-4 md:grid-cols-2">
-        <AiInsightsCard context={{
-          receita: receitaBase,
-          totalDespesas,
-          totalReceitas,
-          disponivel,
-          percentGasto,
-          reserva,
-          totalEssencial,
-          totalNaoEssencial,
-          pctEssencial,
-          topCategorias: categoryRanking.slice(0, 5),
-          parcelasAtivas: allTransactions?.filter(t => t.parcela_total && t.parcela_total > 1).length,
-          faturasPendentes: 0,
-          ...(allTransactions && allTransactions.length > 0 ? (() => {
-            const trends = detectSpendingTrends(allTransactions);
-            const anomalies = detectAnomalies(allTransactions);
-            const recurring = detectRecurringCharges(allTransactions);
-            const health = calculateFinancialHealth({ transactions: allTransactions, receitaBase, reservaMinima: reserva, saldoAtual: saldoAtual || 0 });
-            const commitment = calculateIncomeCommitment({ transactions: allTransactions, receitaBase });
-            return {
-              spendingTrends: trends.filter(t => t.tendencia !== 'estavel').slice(0, 5),
-              anomalies: anomalies.slice(0, 3),
-              recurringCharges: recurring.slice(0, 10),
-              healthScore: health.score,
-              healthNivel: health.nivel,
-              commitmentAvg: commitment.resumo.mediaComprometimento,
-              commitmentTrend: commitment.resumo.tendencia,
-            };
-          })() : {}),
-        }} />
-
-        {allTransactions && allTransactions.length > 0 && (
-          <SmartInsightsCard
-            transactions={allTransactions}
-            receitaBase={receitaBase}
-          />
-        )}
-
-        {allTransactions && allTransactions.length > 0 && (
-          <FinancialHealthCard
-            transactions={allTransactions}
-            receitaBase={receitaBase}
-            reservaMinima={reserva}
-            saldoAtual={saldoAtual || 0}
-          />
-        )}
+        <DeepAnalysisCard
+          context={deepCtx}
+          mode="analises_deep_analysis"
+          title="Análise profunda — Claude Sonnet"
+          description="Tese, riscos, oportunidades e ação imediata a partir dos seus 12 meses"
+          buttonLabel="Gerar análise"
+        />
+        <AskClaudeCard baseContext={askCtx} />
       </div>
     </div>
   );

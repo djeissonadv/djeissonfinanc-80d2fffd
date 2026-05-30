@@ -10,3 +10,6 @@ verify_jwt = true
 
 [functions.ai-financial-advisor]
 verify_jwt = true
+
+[functions.ai-analyst]
+verify_jwt = true

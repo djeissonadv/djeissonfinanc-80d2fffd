@@ -14,6 +14,7 @@ import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { TrendingUp, Lock, Activity, Pencil, X, Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { IncomeCommitmentChart } from '@/components/dashboard/IncomeCommitmentChart';
 import { RecorrentesProjecao } from '@/components/projecoes/RecorrentesProjecao';
+import { DeepAnalysisCard } from '@/components/analytics/ClaudeAnalysisCards';
 import { toast } from 'sonner';
 import { useFontesReceita } from '@/hooks/useFontesReceita';
 import {
@@ -226,6 +227,28 @@ export default function ProjecoesPage() {
       </div>
 
       <RecorrentesProjecao />
+
+      {/* Análise Claude do cenário projetado — só roda sob demanda (clique do user) */}
+      <DeepAnalysisCard
+        mode="projecoes_scenario"
+        title="Análise Claude do cenário"
+        description="Veredito, fragilidades e ajustes pra fortalecer a projeção"
+        buttonLabel="Analisar cenário"
+        context={{
+          receitaBase,
+          despesaMediaMensal:
+            projections.length > 0
+              ? projections.slice(0, 6).reduce((s, p) => s + p.totalDespesas, 0) / Math.min(6, projections.length)
+              : 0,
+          saldoInicial: chartData[0]?.acumulado || 0,
+          reservaMinima: 2000,
+          projecaoMensal: chartData.slice(0, 12).map((c) => ({
+            mes: c.mes,
+            saldoLivre: c.saldo,
+            saldoAcumulado: c.acumulado,
+          })),
+        }}
+      />
 
       {/* Chart */}
       <Card>

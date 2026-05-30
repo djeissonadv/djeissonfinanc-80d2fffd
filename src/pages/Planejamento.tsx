@@ -11,6 +11,7 @@ import { formatCurrency, getMonthName, toLocalIso, getMonthRange } from '@/lib/f
 import { fetchAllRows } from '@/lib/supabase-fetch';
 import { ConfirmDelete } from '@/components/ConfirmDelete';
 import { BudgetReviewCard } from '@/components/planejamento/BudgetReviewCard';
+import { DeepAnalysisCard } from '@/components/analytics/ClaudeAnalysisCards';
 import { monthPace, projetarFimMes, buildBudgetAlerts, compute503020, suggestMeta } from '@/lib/budget-insights';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -420,9 +421,9 @@ export default function PlanejamentoPage() {
         </Card>
       )}
 
-      {/* ── Resumo por IA ── */}
-      <BudgetReviewCard
-        context={{
+      {/* ── Resumo IA (Gemini, rápido) + análise profunda (Claude, sob demanda) ── */}
+      {(() => {
+        const reviewCtx = {
           receita: receitaPlanej,
           despesaMes,
           despesaProjetada,
@@ -440,9 +441,23 @@ export default function PlanejamentoPage() {
             meta: a.meta,
             media: a.media,
           })),
-          categorias: categoryData.slice(0, 12).map(c => ({ categoria: c.categoria, gastoMes: c.gastoMes, media: c.media, meta: c.meta })),
-        }}
-      />
+          categorias: categoryData.slice(0, 12).map(c => ({
+            categoria: c.categoria, gastoMes: c.gastoMes, media: c.media, meta: c.meta,
+          })),
+        };
+        return (
+          <div className="grid gap-4 md:grid-cols-2">
+            <BudgetReviewCard context={reviewCtx} />
+            <DeepAnalysisCard
+              mode="planejamento_review"
+              title="Revisão profunda — Claude"
+              description="Onde o orçamento está estourando, o que cortar, regra 50/30/20"
+              buttonLabel="Revisar com Claude"
+              context={reviewCtx}
+            />
+          </div>
+        );
+      })()}
 
       {/* ── Fontes de receita (colapsável) ── */}
       <Card>

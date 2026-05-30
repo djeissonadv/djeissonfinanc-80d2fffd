@@ -7,6 +7,7 @@ import { fetchAllRows } from '@/lib/supabase-fetch';
 import { useFontesReceita } from '@/hooks/useFontesReceita';
 import { buildDebtPlan, jurosEvitadosQuitando, type DebtItem } from '@/lib/debt-strategy';
 import { DebtStrategyCard } from '@/components/dividas/DebtStrategyCard';
+import { DeepAnalysisCard } from '@/components/analytics/ClaudeAnalysisCards';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -550,8 +551,8 @@ export default function DividasPage() {
             </Card>
           </div>
 
-          <DebtStrategyCard
-            context={{
+          {(() => {
+            const debtCtx = {
               rendaMensal: receitaBase,
               totalRestante: debtPlan.totalRestante,
               totalMensal: debtPlan.totalMensal,
@@ -566,8 +567,20 @@ export default function DividasPage() {
                 valorRestante: a.item.valorRestante,
                 taxaAno: a.item.taxaAno ?? null,
               })),
-            }}
-          />
+            };
+            return (
+              <div className="grid gap-4 md:grid-cols-2">
+                <DebtStrategyCard context={debtCtx} />
+                <DeepAnalysisCard
+                  mode="dividas_strategy"
+                  title="Plano detalhado — Claude"
+                  description="Ordem de ataque, custo de adiar, efeito bola de neve, ação deste mês"
+                  buttonLabel="Montar plano com Claude"
+                  context={debtCtx}
+                />
+              </div>
+            );
+          })()}
         </div>
       )}
 
