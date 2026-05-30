@@ -205,8 +205,13 @@ export const CATEGORIAS_CONFIG: Record<string, CategoriaConfig> = {
 
 export const CATEGORIAS = Object.keys(CATEGORIAS_CONFIG);
 
+// "Transferência entre contas" intencionalmente NÃO está na lista de exclusão —
+// movimentações entre contas próprias do usuário aparecem como DESPESA (saída
+// da conta origem) E RECEITA (entrada na conta destino), e devem usar a mesma
+// categoria pra refletir que é movimento interno, não consumo. Combine com
+// ignorar_dashboard=true pra não contar nos totais do mês.
 export const CATEGORIAS_DESPESA = CATEGORIAS.filter(c =>
-  !['Salário/Pró-labore', 'Freelance/PJ', 'Receita Produtora', 'Investimentos', 'Vendas', 'Reembolsos', 'Devoluções', 'Transferência entre contas', 'Outras receitas'].includes(c)
+  !['Salário/Pró-labore', 'Freelance/PJ', 'Receita Produtora', 'Investimentos', 'Vendas', 'Reembolsos', 'Devoluções', 'Outras receitas'].includes(c)
 );
 
 export const CATEGORIAS_RECEITA = [

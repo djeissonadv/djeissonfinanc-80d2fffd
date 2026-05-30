@@ -21,6 +21,30 @@ const RULES: CategoriaRule[] = [
   // catch-all genérico.
   { patterns: ['SALÁRIO ', 'SALARIO ', 'PRÓ-LABORE', 'PRO-LABORE', 'PROLABORE'], categoria: 'Salário/Pró-labore' },
 
+  // TRANSFERÊNCIA ENTRE CONTAS — PIX/transferências entre os cônjuges (MAIARA ↔
+  // DJEISSON) e entre contas próprias. NÃO é despesa nem receita real — é
+  // movimentação interna. O insert/recategorize também marca ignorar_dashboard=true
+  // pra não inflar totais do mês.
+  //
+  // Identificadores únicos: nomes completos OU CPFs conhecidos (54.447.569 =
+  // Maiara CNPJ, 04409382012 = Maiara CPF, 03885096005 = Djeisson CPF).
+  // Vem MUITO CEDO na lista pra preceder qualquer regra de PIX genérico.
+  {
+    patterns: [
+      'MAIARA PEREIRA MARTINS',
+      'MAIARA P MARTINS',
+      'MAIARA MARTINS',
+      'DJEISSON ALAN MAUSS',
+      'DJÊISSON ALAN MAUSS',
+      'DJEISSON A MAUSS',
+      '54447569000129',
+      '54.447.569',
+      '04409382012',
+      '03885096005',
+    ],
+    categoria: 'Transferência entre contas',
+  },
+
   // PAGAMENTO DE FATURA / CARTÃO / TRANSFERÊNCIA PRO MP (saída da conta, não é consumo)
   // Obs: o PIX pro "MERCADO PAGO INSTITUICAO" é uma mistura (fatura do cartão e
   // parcela do empréstimo MP) — não dá pra distinguir pelo texto, então fica como
