@@ -114,6 +114,10 @@ export function isFaturaPayment(desc: string): boolean {
     d.includes('pag fat') ||
     d.includes('pagto fatura') ||
     /pagamento\s+(d[ae]\s+)?fatura/.test(d) ||
+    // Formato novo do CSV Sicredi Black: "PAGAMENTO 019878444" (só descricao +
+    // número de identificação, sem "fatura" no texto). Sempre vem com valor
+    // NEGATIVO dentro do CSV do cartão = pagamento da fatura anterior.
+    /^pagamento\s+\d{5,}\s*$/i.test(desc.trim()) ||
     d.includes('crédito por parcelamento') ||
     d.includes('credito por parcelamento') ||
     d.includes('pagamento recebido')
