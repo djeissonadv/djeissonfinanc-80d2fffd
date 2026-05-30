@@ -5,13 +5,82 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// Provider dispatch: prefere Gemini direto (pós-migração pro Supabase próprio);
+// cai pro gateway Lovable enquanto a migração está em transição. Quando o novo
+// Supabase estiver vivo com GEMINI_API_KEY setado, ele flipa sozinho — sem
+// downtime nem release coordenado.
+type AICallResult =
+  | { ok: true; content: string }
+  | { ok: false; status: number; error: string };
+
+async function callGeminiDirect(
+  systemPrompt: string,
+  userPrompt: string,
+  apiKey: string,
+  temperature = 0.3,
+): Promise<AICallResult> {
+  const model = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      generationConfig: { temperature },
+    }),
+  });
+  const raw: any = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const msg = raw?.error?.message || `HTTP ${r.status}`;
+    console.error("Gemini error:", r.status, msg);
+    return { ok: false, status: r.status, error: msg };
+  }
+  const text = raw?.candidates?.[0]?.content?.parts
+    ?.map((p: any) => p?.text)
+    .filter(Boolean)
+    .join("") || "";
+  return { ok: true, content: text };
+}
+
+async function callLovableGateway(
+  systemPrompt: string,
+  userPrompt: string,
+  apiKey: string,
+  temperature = 0.3,
+): Promise<AICallResult> {
+  const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "google/gemini-3-flash-preview",
+      temperature,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    }),
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    console.error("Lovable gateway error:", r.status, t);
+    return { ok: false, status: r.status, error: t || `HTTP ${r.status}` };
+  }
+  const data: any = await r.json();
+  const text = data?.choices?.[0]?.message?.content || "";
+  return { ok: true, content: text };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const { type, context } = await req.json();
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    if (!GEMINI_API_KEY && !LOVABLE_API_KEY) {
+      throw new Error("Nenhum provider de IA configurado (GEMINI_API_KEY ou LOVABLE_API_KEY)");
+    }
 
     let systemPrompt = "";
     let userPrompt = "";
@@ -208,52 +277,35 @@ ${c.categorias?.length ? `\nGasto por categoria (mês / média):\n${c.categorias
         });
     }
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        temperature: 0.3,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      }),
-    });
+    const result = GEMINI_API_KEY
+      ? await callGeminiDirect(systemPrompt, userPrompt, GEMINI_API_KEY, 0.3)
+      : await callLovableGateway(systemPrompt, userPrompt, LOVABLE_API_KEY!, 0.3);
 
-    if (response.status === 429) {
-      return new Response(JSON.stringify({ error: "Limite de requisições atingido. Tente novamente em alguns minutos." }), {
-        status: 429,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (response.status === 402) {
-      return new Response(JSON.stringify({ error: "Créditos de IA esgotados. Adicione créditos nas configurações." }), {
-        status: 402,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (!response.ok) {
-      const t = await response.text();
-      console.error("AI gateway error:", response.status, t);
+    if (!result.ok) {
+      if (result.status === 429) {
+        return new Response(JSON.stringify({ error: "Limite de requisições atingido. Tente novamente em alguns minutos." }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (result.status === 402) {
+        return new Response(JSON.stringify({ error: "Créditos de IA esgotados. Adicione créditos nas configurações." }), {
+          status: 402,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify({ error: "Erro ao consultar IA" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = result.content;
 
     // Valida a resposta: se vier vazia ou for "lixo" sem nenhum número, devolve
     // erro em vez de exibir um texto genérico/inventado como se fosse análise.
     if (typeof content !== "string" || content.trim().length < 10) {
-      console.error("AI empty/short response:", JSON.stringify(data).slice(0, 500));
+      console.error("AI empty/short response:", content?.slice?.(0, 200));
       return new Response(
         JSON.stringify({ error: "A IA não retornou uma análise utilizável. Tente novamente." }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
