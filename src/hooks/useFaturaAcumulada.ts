@@ -45,6 +45,9 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
   return useQuery({
     queryKey: ['fatura-acumulada', user?.id, cardIds.join(','), billingMonth],
     queryFn: async () => {
+      if (typeof window !== 'undefined') {
+        (window as any).__FATURA_DEBUG_STEPS = ['queryFn:start'];
+      }
       if (cardIds.length === 0) return {} as Record<string, FaturaAcumulada>;
 
       // Fetch ALL transactions for these cards (including ignorar_dashboard
@@ -52,10 +55,12 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
       // need to be counted for card balance calculation).
       // Pagina manualmente pra não depender de fetchAllRows (que estava
       // travando — investigando) e pra ter controle determinístico via order(id).
+      if (typeof window !== 'undefined') (window as any).__FATURA_DEBUG_STEPS.push('antes-do-supabase-call');
       const allTxs: CardTxRow[] = [];
       const PAGE = 1000;
       let from = 0;
       while (true) {
+        if (typeof window !== 'undefined') (window as any).__FATURA_DEBUG_STEPS.push(`page-${from}-start`);
         const { data, error } = await supabase
           .from('transacoes')
           .select('conta_id, tipo, valor, descricao, data, mes_competencia')
@@ -63,13 +68,15 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
           .in('conta_id', cardIds)
           .order('id')
           .range(from, from + PAGE - 1);
+        if (typeof window !== 'undefined') (window as any).__FATURA_DEBUG_STEPS.push(`page-${from}-done:${data?.length ?? 'null'}:err=${error ? String(error).slice(0, 50) : 'no'}`);
         if (error) throw error;
         if (!data || data.length === 0) break;
         allTxs.push(...data);
         if (data.length < PAGE) break;
         from += PAGE;
-        if (from > 50_000) break; // safety stop
+        if (from > 50_000) break;
       }
+      if (typeof window !== 'undefined') (window as any).__FATURA_DEBUG_STEPS.push(`total-rows:${allTxs.length}`);
 
       const result: Record<string, FaturaAcumulada> = {};
 
