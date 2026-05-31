@@ -81,7 +81,10 @@ const CONTRATO_META: Record<string, ContratoMeta> = {
   C5A9304161:   { nome: 'Sicredi C5A9304161', color: '#8b5cf6', taxaAno: 58.56, parcelaTotal: 36 },
   // DDC sicredi_1780189318.pdf — crédito pessoal
   C5A9304811:   { nome: 'Sicredi C5A9304811', color: '#06b6d4', taxaAno: 61.08, parcelaTotal: 30 },
-  MP1240412639: { nome: 'Mercado Pago #1240412639', color: '#f59e0b', taxaAno: 130, parcelaTotal: 24 },
+  // DDC MercadoPago 5.pdf — Taxa Anual nominal = 81% (CET = 130,02%).
+  // Padronizo nominal pra alinhar com critério usado nos Sicredi (não a efetiva).
+  // CET = taxa real no bolso incluindo IOF/tarifas — segue como contexto.
+  MP1240412639: { nome: 'Mercado Pago #1240412639', color: '#f59e0b', taxaAno: 81, parcelaTotal: 24 },
   // DDC sicredi_1779671521.pdf — crédito pessoal (vence 06/2026)
   C5A9203519:   { nome: 'Sicredi C5A9203519', color: '#10b981', taxaAno: 58.80, parcelaTotal: 12 },
   // DDC sicredi_1780189375.pdf — crédito pessoal (vence 08/2026)
