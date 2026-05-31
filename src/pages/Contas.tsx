@@ -231,9 +231,10 @@ export default function ContasPage() {
           const saldoAtual = (conta.saldo_inicial || 0) + (saldos?.[conta.id] || 0);
           const isCredito = conta.tipo === 'credito';
           const acum = faturaAcum?.[conta.id];
-          // Fatura total a pagar = saldo que rolou de meses anteriores + despesas do mês.
-          // O status compara o que foi pago no mês contra esse total acumulado.
-          const faturaTotal = (acum?.saldoAnterior || 0) + (acum?.despesasMes || 0);
+          // Fatura total a pagar = saldo anterior + valor da fatura líquida do mês.
+          // valorFatura usa o "Total informado" do extrato quando há (MP/Black/Nubank),
+          // senão cai no bruto despesasMes. Mantém consistência com o card do Dashboard.
+          const faturaTotal = (acum?.saldoAnterior || 0) + (acum?.valorFatura || 0);
           const pagamentoTotal = acum?.pagamentosMes || 0;
           const status = isCredito ? getInvoiceStatus(faturaTotal, pagamentoTotal) : null;
 

@@ -254,8 +254,8 @@ export function FaturaDrawer({ open, onOpenChange, cardId, cardName, start, end,
                   </div>
                 )}
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Despesas do mês</span>
-                  <span className="font-medium">{formatCurrency(acumulado.despesasMes)}</span>
+                  <span className="text-muted-foreground">Fatura do mês</span>
+                  <span className="font-medium">{formatCurrency(acumulado.valorFatura)}</span>
                 </div>
                 {acumulado.pagamentosMes > 0 && (
                   <div className="flex justify-between text-sm">
