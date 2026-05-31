@@ -138,27 +138,20 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
         // Sem marcador, cai na acumulação antiga (saldoAnterior + mês − pago).
         const informado = totalInformado[billingMonth];
 
-        // DEBUG temporário: dump por card pra investigar marker não pego.
-        // Usa sessionStorage pra sobreviver ao reload (window.X some no reload).
-        // Pra ligar: digite no console → sessionStorage.setItem('debug_fatura','1')
-        // Pra desligar: sessionStorage.removeItem('debug_fatura')
-        // Remover este bloco após confirmar a causa.
-        if (typeof window !== 'undefined' && sessionStorage.getItem('debug_fatura') === '1') {
-          console.log(`[fatura ${cardId.slice(0, 8)}] billingMonth=${billingMonth}`, {
-            informado,
-            totalInformadoKeys: Object.keys(totalInformado),
-            totalInformadoFull: totalInformado,
-            currentPeriod,
-            saldoAnterior,
-            markerCount: cardTxs.filter(t => isFaturaTotalMarker(t.descricao)).length,
-            markersList: cardTxs.filter(t => isFaturaTotalMarker(t.descricao)).map(t => ({
-              mes: t.mes_competencia,
-              data: t.data,
-              valor: t.valor,
-              valorAsNumber: Number(t.valor),
-            })),
-          });
-        }
+        // DEBUG TEMPORÁRIO (loga sempre em produção até confirmar a causa).
+        // Usa console.error pra garantir que aparece mesmo com filtros default.
+        console.error(`[FATURA_DEBUG ${cardId.slice(0, 8)}]`, JSON.stringify({
+          billingMonth,
+          informado: informado ?? null,
+          tipo_informado: typeof informado,
+          chavesMarker: Object.keys(totalInformado),
+          markersBrutos: cardTxs
+            .filter(t => isFaturaTotalMarker(t.descricao))
+            .map(t => ({ mes: t.mes_competencia, data: t.data, valor: t.valor, valorNum: Number(t.valor) })),
+          totalCardTxs: cardTxs.length,
+          currentPeriodDespesas: currentPeriod.despesas,
+          currentPeriodPagamentos: currentPeriod.pagamentos,
+        }));
 
         const totalAPagar = informado != null
           ? Math.max(0, informado - currentPeriod.conciliado)
