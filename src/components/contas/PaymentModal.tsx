@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatCurrency, getMonthName } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useTodayIso } from '@/hooks/useTodayIso';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { generateHash, isFaturaPayment } from '@/lib/csv-parser';
@@ -26,6 +27,7 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const todayIso = useTodayIso();
   const [mode, setMode] = useState<'total' | 'parcial_parcelar' | 'parcial_acumular' | 'parcial_parcelado_emissor'>('total');
   const [valorPago, setValorPago] = useState(0);
   const [parcelas, setParcelas] = useState(2);
@@ -67,7 +69,12 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
     setSubmitting(true);
 
     try {
-      const baseDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+      // Data dos lançamentos: HOJE (quando o user de fato registrou o pagamento)
+      // — não o dia 01 do mês da fatura. Isso evita que o saldo da CC mostre
+      // saída em data passada (ex: pagar fatura de março em 31/05 colocava
+      // data=2026-03-01 e bagunçava o saldo histórico). mes_competencia
+      // continua sendo o billingPeriod da fatura, pra cair no card certo.
+      const baseDate = todayIso;
       const valorPagamento = mode === 'total' ? faturaTotal : valorPago;
       const billingPeriod = `${year}-${String(month + 1).padStart(2, '0')}`;
 
