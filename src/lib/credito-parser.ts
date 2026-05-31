@@ -111,8 +111,12 @@ function parseMercadoPago(text: string): CreditoDescritivo | null {
   const fixaMatch = text.match(/valor de cada parcela[^R]*R\$\s*([\d.,]+)/i);
   const saldoMatch = text.match(/saldo devedor atualizado[^R]*R\$\s*([\d.,]+)/i);
 
-  // Linhas: N D/mmm/AAAA (data_pgto|-) R$ valor ...  (futura quando data de pagamento = "-")
-  const rowRe = /(\d{1,2})\s+(\d{1,2})\/([a-z]{3})\/(\d{4})\s+(-|\d{1,2}\/[a-z]{3}\/\d{4})\s+R\$\s*([\d.,]+)/gi;
+  // Linhas: N D/mmm/AAAA (data_pgto|-) [R$] valor ...  (futura quando data
+  // de pagamento = "-"). O "R$" é OPCIONAL — versões mais recentes do DDC MP
+  // omitem o prefixo na tabela ("Programada 563.41" em vez de "Programada R$
+  // 563,41"). Pra não casar dia/mês de outra linha como número, exigimos pelo
+  // menos um ponto ou vírgula no valor (separador decimal).
+  const rowRe = /(\d{1,2})\s+(\d{1,2})\/([a-z]{3})\/(\d{4})\s+(-|\d{1,2}\/[a-z]{3}\/\d{4})\s+(?:R\$\s*)?(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})/gi;
 
   const parcelas: CreditoParcela[] = [];
   const valores: number[] = [];
