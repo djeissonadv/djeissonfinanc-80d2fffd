@@ -139,8 +139,11 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
         const informado = totalInformado[billingMonth];
 
         // DEBUG temporário: dump por card pra investigar marker não pego.
-        // Remover após confirmar a causa em https://djeissonfinanc.vercel.app.
-        if (typeof window !== 'undefined' && (window as any).__DEBUG_FATURA) {
+        // Usa sessionStorage pra sobreviver ao reload (window.X some no reload).
+        // Pra ligar: digite no console → sessionStorage.setItem('debug_fatura','1')
+        // Pra desligar: sessionStorage.removeItem('debug_fatura')
+        // Remover este bloco após confirmar a causa.
+        if (typeof window !== 'undefined' && sessionStorage.getItem('debug_fatura') === '1') {
           console.log(`[fatura ${cardId.slice(0, 8)}] billingMonth=${billingMonth}`, {
             informado,
             totalInformadoKeys: Object.keys(totalInformado),
