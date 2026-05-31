@@ -112,11 +112,16 @@ function parseMercadoPago(text: string): CreditoDescritivo | null {
   const saldoMatch = text.match(/saldo devedor atualizado[^R]*R\$\s*([\d.,]+)/i);
 
   // Linhas: N D/mmm/AAAA (data_pgto|-) [R$] valor ...  (futura quando data
-  // de pagamento = "-"). O "R$" é OPCIONAL — versões mais recentes do DDC MP
-  // omitem o prefixo na tabela ("Programada 563.41" em vez de "Programada R$
-  // 563,41"). Pra não casar dia/mês de outra linha como número, exigimos pelo
-  // menos um ponto ou vírgula no valor (separador decimal).
-  const rowRe = /(\d{1,2})\s+(\d{1,2})\/([a-z]{3})\/(\d{4})\s+(-|\d{1,2}\/[a-z]{3}\/\d{4})\s+(?:R\$\s*)?(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})/gi;
+  // de pagamento = "-").
+  //
+  // 2 fontes de variação observadas em DDCs MP reais:
+  //   1. "R$" é OPCIONAL — versões recentes mostram só o número ("563.41"
+  //      em vez de "R$ 563,41").
+  //   2. pdfjs extrai dia/mês como itens SEPARADOS e nosso join com space
+  //      injeta espaço dentro da data: "5/ jan/ 2026" em vez de "5/jan/2026".
+  //      O regex tolera \s* em torno das barras.
+  // Pra não casar dia/mês como valor, exigimos pelo menos separador decimal.
+  const rowRe = /(\d{1,2})\s+(\d{1,2})\/\s*([a-z]{3})\/\s*(\d{4})\s+(-|\d{1,2}\/\s*[a-z]{3}\/\s*\d{4})\s+(?:R\$\s*)?(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})/gi;
 
   const parcelas: CreditoParcela[] = [];
   const valores: number[] = [];
