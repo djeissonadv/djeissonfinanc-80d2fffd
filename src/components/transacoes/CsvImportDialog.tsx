@@ -689,8 +689,18 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
         //    - MAIARA PEREIRA MARTINS") — movimento neutro entre os 2, NÃO é
         //    receita/despesa real. Sem esta linha, todo PIX entre vocês contava
         //    nos dois lados do fluxo.
+        // Marca como ignorar_dashboard:
+        // 1) "Saldo anterior da fatura" — artefato de rollover.
+        // 2) PIX/transfer entre cônjuges — neutro entre os 2.
+        // 3) Pagamento de fatura interno do extrato ("Pag Fat Deb Cc" sem sufixo,
+        //    "Pagamento da fatura de X", "Pagamento recebido", "Crédito por
+        //    parcelamento"). Política do app: pagamento de fatura é SEMPRE
+        //    manual via botão "Marcar como paga". Mantemos no histórico (auditoria)
+        //    mas ignoramos no cálculo de Dashboard/fatura.
         ignorar_dashboard:
-          isSaldoAnteriorFatura(t.descricao) || isTransferenciaInterna(t.descricao),
+          isSaldoAnteriorFatura(t.descricao) ||
+          isTransferenciaInterna(t.descricao) ||
+          isFaturaPayment(t.descricao),
         _isOriginal: true,
       });
     }

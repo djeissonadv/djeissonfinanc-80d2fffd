@@ -68,15 +68,28 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
         const totalInformado: Record<string, number> = {};
 
         for (const t of cardTxs) {
-          // Marcador do total informado: não é despesa — guarda pra sobrescrever.
+          // Marcador do total informado pelo extrato: usado como FATURA LÍQUIDA
+          // do período quando presente (Sicredi Black, Nubank, MP).
           if (isFaturaTotalMarker(t.descricao)) {
             totalInformado[t.mes_competencia || t.data.substring(0, 7)] = Number(t.valor);
             continue;
           }
-          // "Saldo anterior da fatura" é artefato de rollover — este hook já
-          // acumula o saldo dos meses anteriores (saldoAnterior abaixo), então
-          // contar essa linha como despesa duplicaria o mês anterior inteiro.
+          // "Saldo anterior da fatura": artefato de rollover — duplicaria mês.
           if (isSaldoAnteriorFatura(t.descricao)) continue;
+
+          // ── Política do app ───────────────────────────────────────────────
+          // Pagamento de fatura é SEMPRE manual via botão "Marcar como paga"
+          // (que cria "Pag Fat Deb Cc - {Cartão}" na CC, com sufixo).
+          //
+          // Tudo que vem da IMPORTAÇÃO do extrato — linhas internas de
+          // pagamento da fatura ("Pag Fat Deb Cc" sem sufixo, "Pagamento da
+          // fatura de X" do MP, "Pagamento recebido" do Nubank) e abatimentos
+          // de parcelamento ("Crédito por parcelamento") — é IGNORADO no
+          // cálculo. Evita dupla contagem com a baixa manual e mantém a UI
+          // limpa. Parcelas de fatura parcelada são lançadas pelo user como
+          // despesas normais nos meses futuros.
+          if (isCreditoParcelamento(t.descricao)) continue;
+          if (isFaturaPayment(t.descricao) && !isConciliacaoPayment(t.descricao)) continue;
 
           const periodo = t.mes_competencia || t.data.substring(0, 7);
           if (!byPeriod[periodo]) byPeriod[periodo] = { despesas: 0, pagamentos: 0, conciliado: 0 };
@@ -85,19 +98,14 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
             byPeriod[periodo].despesas += Number(t.valor);
           }
 
-          // Detect payments (receita que abatem a fatura). "Crédito por
-          // parcelamento" é abatimento INTERNO não-caixa do parcelamento — não
-          // conta como pagamento (senão reduz o "A pagar" sem ter saído dinheiro).
-          if (isFaturaPayment(t.descricao) && !isCreditoParcelamento(t.descricao)) {
+          // Único pagamento que abate: conciliação manual ("Pag Fat Deb Cc -
+          // {Cartão}") gerada pelo botão "Marcar como paga".
+          if (isConciliacaoPayment(t.descricao)) {
+            byPeriod[periodo].conciliado += Math.abs(Number(t.valor));
             byPeriod[periodo].pagamentos += Math.abs(Number(t.valor));
-            // Pagamento EXPLÍCITO (conciliação/"Pagar fatura") — é o único que
-            // abate quando há "Total informado", pois o marcador já é líquido.
-            if (isConciliacaoPayment(t.descricao)) {
-              byPeriod[periodo].conciliado += Math.abs(Number(t.valor));
-            }
           }
 
-          // Devolutions reduce despesas (valor is always stored positive; use abs for safety)
+          // Devoluções reduzem despesas.
           if (isDevolution(t.descricao) && t.tipo === 'receita') {
             byPeriod[periodo].despesas -= Math.abs(Number(t.valor));
           }
