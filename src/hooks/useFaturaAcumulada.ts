@@ -22,10 +22,15 @@ interface FaturaMes {
 
 interface FaturaAcumulada {
   saldoAnterior: number;    // unpaid from previous months
-  despesasMes: number;      // current month expenses
+  despesasMes: number;      // current month expenses (bruto, sem marker)
   pagamentosMes: number;    // current month payments
   totalAPagar: number;      // saldoAnterior + despesasMes - pagamentosMes
   historico: FaturaMes[];   // monthly breakdown
+  /** Valor REAL da fatura do mês, esteja ela paga ou não. Quando o extrato
+   *  informa o "Total a pagar" via marcador (Sicredi Black, Nubank, MP),
+   *  reflete esse número líquido. Sem marcador, cai no bruto despesasMes.
+   *  Útil pra UI manter visível "fatura paga: R$ X" em vez de R$ 0,00. */
+  valorFatura: number;
 }
 
 // Detection helpers moved to @/lib/csv-parser for reuse across parsers/hooks/pages.
@@ -142,6 +147,12 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
           pagamentosMes: currentPeriod.pagamentos,
           totalAPagar,
           historico: historico.filter(h => h.periodo <= billingMonth),
+          // "Valor da fatura" do período = marcador quando houver (Sicredi
+          // Black, Nubank, MP têm o "Total a pagar (informado pelo extrato)");
+          // senão usa o bruto somado. Mantém o número visível na UI mesmo
+          // quando a fatura já foi paga (despesasMes seria 0 em mês onde só
+          // tem pagamentos, escondendo o valor original).
+          valorFatura: informado != null ? informado : currentPeriod.despesas,
         };
       }
 
