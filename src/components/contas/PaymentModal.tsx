@@ -26,7 +26,7 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [mode, setMode] = useState<'total' | 'parcial'>('total');
+  const [mode, setMode] = useState<'total' | 'parcial_parcelar' | 'parcial_acumular'>('total');
   const [valorPago, setValorPago] = useState(0);
   const [parcelas, setParcelas] = useState(2);
   const [valorParcelaCustom, setValorParcelaCustom] = useState<string>(''); // string pra permitir vazio
@@ -75,7 +75,7 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
       // as its future parcelas (when partial). This keeps the payment and the parcelamento
       // visibly tied together in the UI.
       const grupo_parcela =
-        mode === 'parcial' && restante > 0 && parcelas > 0 ? crypto.randomUUID() : null;
+        mode === 'parcial_parcelar' && restante > 0 && parcelas > 0 ? crypto.randomUUID() : null;
 
       // Create payment transaction on credit card account (receita = reduces card debt)
       const paymentHash = generateHash(baseDate, `Pagamento fatura ${contaNome}`, valorPagamento, pessoaNome);
@@ -140,8 +140,8 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
         }
       }
 
-      // If partial, create future installments for remaining (linked to the same grupo_parcela)
-      if (mode === 'parcial' && restante > 0 && parcelas > 0 && grupo_parcela) {
+      // If partial + parcelar, create future installments for remaining (linked to the same grupo_parcela)
+      if (mode === 'parcial_parcelar' && restante > 0 && parcelas > 0 && grupo_parcela) {
         // ABATIMENTO DA FATURA ATUAL: ao parcelar, o emissor considera a
         // fatura corrente como FECHADA — o restante vira dívida futura
         // (parcelas). Pra refletir isso, lança uma "receita" no cartão no
@@ -199,8 +199,14 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
       queryClient.invalidateQueries({ queryKey: ['faturas'] });
       queryClient.invalidateQueries({ queryKey: ['saldos'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['fatura-acumulada'] });
+      const titleByMode = {
+        total: 'Pagamento total registrado',
+        parcial_parcelar: 'Pagamento parcial + parcelamento registrado',
+        parcial_acumular: 'Pagamento parcial registrado — restante acumula na próxima fatura',
+      } as const;
       toast({
-        title: mode === 'total' ? 'Pagamento total registrado' : 'Pagamento parcial + parcelamento registrado',
+        title: titleByMode[mode],
         description: debitoDuplicado
           ? 'O débito já constava no extrato da conta (importado) — não foi duplicado.'
           : undefined,
@@ -245,22 +251,28 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
             </p>
           )}
 
-          <RadioGroup value={mode} onValueChange={(v) => setMode(v as 'total' | 'parcial')}>
+          <RadioGroup value={mode} onValueChange={(v) => setMode(v as typeof mode)}>
             <div className="flex items-center space-x-2 p-3 rounded-lg border cursor-pointer hover:bg-muted/50" onClick={() => setMode('total')}>
               <RadioGroupItem value="total" id="total" />
               <Label htmlFor="total" className="cursor-pointer flex-1">
                 Pagar total ({formatCurrency(faturaTotal)})
               </Label>
             </div>
-            <div className="flex items-center space-x-2 p-3 rounded-lg border cursor-pointer hover:bg-muted/50" onClick={() => setMode('parcial')}>
-              <RadioGroupItem value="parcial" id="parcial" />
-              <Label htmlFor="parcial" className="cursor-pointer flex-1">
+            <div className="flex items-center space-x-2 p-3 rounded-lg border cursor-pointer hover:bg-muted/50" onClick={() => setMode('parcial_parcelar')}>
+              <RadioGroupItem value="parcial_parcelar" id="parcial_parcelar" />
+              <Label htmlFor="parcial_parcelar" className="cursor-pointer flex-1">
                 Pagar parcial + parcelar restante
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2 p-3 rounded-lg border cursor-pointer hover:bg-muted/50" onClick={() => setMode('parcial_acumular')}>
+              <RadioGroupItem value="parcial_acumular" id="parcial_acumular" />
+              <Label htmlFor="parcial_acumular" className="cursor-pointer flex-1">
+                Pagar parcial + acumular restante na próxima fatura
               </Label>
             </div>
           </RadioGroup>
 
-          {mode === 'parcial' && (
+          {(mode === 'parcial_parcelar' || mode === 'parcial_acumular') && (
             <div className="space-y-3 p-3 rounded-lg border bg-muted/30">
               <div className="space-y-2">
                 <Label>Valor pago agora (R$)</Label>
@@ -275,45 +287,59 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
               <div className="p-2 rounded bg-muted text-sm">
                 Restante: <strong className="text-destructive">{formatCurrency(restante)}</strong>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-2">
-                  <Label>Parcelar em</Label>
-                  <Select value={String(parcelas)} onValueChange={(v) => setParcelas(Number(v))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 23 }, (_, i) => i + 2).map(n => (
-                        <SelectItem key={n} value={String(n)}>{n}x</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Valor de cada parcela (R$)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    placeholder={valorParcelaAuto.toFixed(2)}
-                    value={valorParcelaCustom}
-                    onChange={(e) => setValorParcelaCustom(e.target.value)}
-                  />
-                </div>
-              </div>
-              {restante > 0 && (
-                <div className="p-2 rounded bg-accent/10 border border-accent/20 text-sm text-center space-y-0.5">
-                  <div>
-                    {parcelas}x de <strong>{formatCurrency(valorParcela)}</strong> = <strong>{formatCurrency(totalParcelado)}</strong>
+
+              {mode === 'parcial_parcelar' && (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-2">
+                      <Label>Parcelar em</Label>
+                      <Select value={String(parcelas)} onValueChange={(v) => setParcelas(Number(v))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 23 }, (_, i) => i + 2).map(n => (
+                            <SelectItem key={n} value={String(n)}>{n}x</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Valor de cada parcela (R$)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        placeholder={valorParcelaAuto.toFixed(2)}
+                        value={valorParcelaCustom}
+                        onChange={(e) => setValorParcelaCustom(e.target.value)}
+                      />
+                    </div>
                   </div>
-                  {juros > 0.01 && (
-                    <div className="text-xs text-muted-foreground">
-                      Juros embutidos: <strong className="text-warning">{formatCurrency(juros)}</strong>
+                  {restante > 0 && (
+                    <div className="p-2 rounded bg-accent/10 border border-accent/20 text-sm text-center space-y-0.5">
+                      <div>
+                        {parcelas}x de <strong>{formatCurrency(valorParcela)}</strong> = <strong>{formatCurrency(totalParcelado)}</strong>
+                      </div>
+                      {juros > 0.01 && (
+                        <div className="text-xs text-muted-foreground">
+                          Juros embutidos: <strong className="text-warning">{formatCurrency(juros)}</strong>
+                        </div>
+                      )}
+                      {juros < -0.01 && (
+                        <div className="text-xs text-muted-foreground">
+                          Desconto: <strong className="text-success">{formatCurrency(-juros)}</strong>
+                        </div>
+                      )}
                     </div>
                   )}
-                  {juros < -0.01 && (
-                    <div className="text-xs text-muted-foreground">
-                      Desconto: <strong className="text-success">{formatCurrency(-juros)}</strong>
-                    </div>
-                  )}
+                </>
+              )}
+
+              {mode === 'parcial_acumular' && restante > 0 && (
+                <div className="p-2 rounded bg-accent/10 border border-accent/20 text-xs text-muted-foreground">
+                  O restante de <strong className="text-foreground">{formatCurrency(restante)}</strong> vai
+                  aparecer como <strong>saldo anterior</strong> na fatura do próximo mês.
+                  Se o emissor cobrar juros sobre o saldo rolado, eles vão refletir
+                  no marcador da fatura quando você importar o próximo extrato.
                 </div>
               )}
             </div>
@@ -322,7 +348,7 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
           <Button
             className="w-full"
             type="submit"
-            disabled={submitting || (mode === 'parcial' && (valorPago <= 0 || valorPago >= faturaTotal)) || (!effectiveContaOrigem && (contasDebito?.length || 0) > 0)}
+            disabled={submitting || ((mode === 'parcial_parcelar' || mode === 'parcial_acumular') && (valorPago <= 0 || valorPago >= faturaTotal)) || (!effectiveContaOrigem && (contasDebito?.length || 0) > 0)}
           >
             {submitting ? 'Registrando...' : 'Confirmar Pagamento'}
           </Button>
