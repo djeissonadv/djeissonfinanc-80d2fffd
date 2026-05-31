@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { formatCurrency } from '@/lib/format';
 import { AlertTriangle, Repeat } from 'lucide-react';
 import type { SpendingAnomaly, RecurringCharge } from '@/lib/spending-patterns';
+import { useNavigate } from 'react-router-dom';
 
 // ---------------------------------------------------------------------------
 // Anomalias detectadas pelo spending-patterns. Cards individuais com cor, mês,
@@ -14,7 +15,15 @@ interface AnomaliesListProps {
 }
 
 export function AnomaliesList({ anomalies, maxItems = 5 }: AnomaliesListProps) {
+  const navigate = useNavigate();
   const top = anomalies.slice(0, maxItems);
+
+  // Anomalia → abre Transações filtradas pela categoria + mês da anomalia,
+  // pra investigar EXATAMENTE o que estourou.
+  const drillTo = (a: SpendingAnomaly) => {
+    const params = new URLSearchParams({ categoria: a.categoria, mes: a.mes });
+    navigate(`/transacoes?${params.toString()}`);
+  };
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -30,9 +39,12 @@ export function AnomaliesList({ anomalies, maxItems = 5 }: AnomaliesListProps) {
         ) : (
           <div className="space-y-2">
             {top.map((a, i) => (
-              <div
+              <button
                 key={`${a.categoria}-${a.mes}-${i}`}
-                className="flex items-start justify-between gap-3 rounded-md border border-amber-200/50 bg-amber-50 dark:bg-amber-950/20 p-2.5"
+                type="button"
+                onClick={() => drillTo(a)}
+                aria-label={`Ver ${a.categoria} em ${a.mes}`}
+                className="flex items-start justify-between gap-3 rounded-md border border-amber-200/50 bg-amber-50 dark:bg-amber-950/20 p-2.5 w-full text-left hover:bg-amber-100/70 dark:hover:bg-amber-900/40 transition-colors"
               >
                 <div className="min-w-0">
                   <div className="text-sm font-medium truncate">{a.categoria}</div>
@@ -46,7 +58,7 @@ export function AnomaliesList({ anomalies, maxItems = 5 }: AnomaliesListProps) {
                     +{formatCurrency(a.excesso)}
                   </Badge>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -65,8 +77,18 @@ interface RecurringChargesListProps {
 }
 
 export function RecurringChargesList({ charges, maxItems = 10 }: RecurringChargesListProps) {
+  const navigate = useNavigate();
   const top = charges.slice(0, maxItems);
   const totalMensal = top.reduce((s, c) => s + c.valor, 0);
+
+  // Recorrente → busca por descrição (substring) na Transações. Pega só os
+  // 25 primeiros chars da descrição pra evitar match exato falhando por
+  // variação do banco (datas no fim, números de transação, etc).
+  const drillTo = (descricao: string) => {
+    const busca = descricao.slice(0, 25).trim();
+    const params = new URLSearchParams({ busca });
+    navigate(`/transacoes?${params.toString()}`);
+  };
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -85,7 +107,13 @@ export function RecurringChargesList({ charges, maxItems = 10 }: RecurringCharge
         ) : (
           <div className="divide-y">
             {top.map((c, i) => (
-              <div key={`${c.descricao}-${i}`} className="flex items-center justify-between py-2 first:pt-0 last:pb-0">
+              <button
+                key={`${c.descricao}-${i}`}
+                type="button"
+                onClick={() => drillTo(c.descricao)}
+                aria-label={`Ver lançamentos de ${c.descricao}`}
+                className="flex items-center justify-between py-2 first:pt-0 last:pb-0 w-full text-left hover:bg-muted/40 -mx-2 px-2 rounded-md transition-colors"
+              >
                 <div className="min-w-0">
                   <div className="text-sm font-medium truncate">{c.descricao}</div>
                   <div className="text-xs text-muted-foreground">
@@ -93,7 +121,7 @@ export function RecurringChargesList({ charges, maxItems = 10 }: RecurringCharge
                   </div>
                 </div>
                 <div className="text-sm font-semibold tabular-nums shrink-0">{formatCurrency(c.valor)}</div>
-              </div>
+              </button>
             ))}
           </div>
         )}

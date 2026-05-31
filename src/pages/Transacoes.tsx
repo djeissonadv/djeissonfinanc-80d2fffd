@@ -64,14 +64,25 @@ export default function TransacoesPage() {
     });
   };
 
-  // Read URL params on mount
+  // Read URL params on mount. Suporta drill-down vindo de Análises/Dashboard/
+  // Dívidas: /transacoes?categoria=Saude&mes=2026-05&busca=oboticario etc.
   useEffect(() => {
     const cat = searchParams.get('categoria');
     const tipo = searchParams.get('tipo');
     const essencial = searchParams.get('essencial');
+    const busca = searchParams.get('busca');
+    const mes = searchParams.get('mes'); // YYYY-MM
+    const conta = searchParams.get('conta');
     if (cat) setFilterCategoria(cat);
     if (tipo) setFilterTipo(tipo);
     if (essencial) setFilterEssencial(essencial);
+    if (busca) setSearch(busca);
+    if (conta) setFilterConta(conta);
+    if (mes && /^\d{4}-\d{2}$/.test(mes)) {
+      const [y, m] = mes.split('-').map(Number);
+      setYear(y);
+      setMonth(m - 1);
+    }
   }, [searchParams]);
 
   const { start, end } = getMonthRange(month, year);

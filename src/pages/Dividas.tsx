@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useNavigate } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -63,14 +64,37 @@ interface ContratoMeta {
   parcelaTotal?: number;
 }
 
+// Taxas obtidas via Documento Descritivo de Crédito (DDC) Sicredi. Quando
+// disponível, taxaAno = "Taxa de Juros Anual % a.a." (não a "Efetiva" — a
+// efetiva inclui IOF embutido e usa juros compostos diferente).
+//
+// localStorage override 'loan_taxas_overrides' permite o user editar inline
+// quando o PDF do contrato chegar — sem precisar redeploy.
 const CONTRATO_META: Record<string, ContratoMeta> = {
-  C5A9200110:   { nome: 'Sicredi C5A9200110', color: '#3b82f6', parcelaTotal: 48 },
+  // DDC sicredi_1779671452.pdf — aquisição de bens/veículos
+  C5A9200110:   { nome: 'Sicredi C5A9200110', color: '#3b82f6', taxaAno: 21.84, parcelaTotal: 48 },
   C5A9304161:   { nome: 'Sicredi C5A9304161', color: '#8b5cf6', parcelaTotal: 36 },
   C5A9304811:   { nome: 'Sicredi C5A9304811', color: '#06b6d4', parcelaTotal: 30 },
   MP1240412639: { nome: 'Mercado Pago #1240412639', color: '#f59e0b', taxaAno: 130, parcelaTotal: 24 },
-  C5A9203519:   { nome: 'Sicredi C5A9203519', color: '#10b981', parcelaTotal: 12 },
+  // DDC sicredi_1779671521.pdf — crédito pessoal sem consignação (CARO!)
+  C5A9203519:   { nome: 'Sicredi C5A9203519', color: '#10b981', taxaAno: 58.80, parcelaTotal: 12 },
   C5A9304498:   { nome: 'Sicredi C5A9304498', color: '#ec4899', parcelaTotal: 12 },
 };
+
+// Lê overrides do localStorage e aplica em CONTRATO_META on-the-fly. Útil pra
+// editar taxas sem redeploy — quando o user marcar a taxa via UI inline.
+function getContratoMeta(key: string): ContratoMeta {
+  const base = CONTRATO_META[key] || { nome: key, color: '#6b7280' };
+  try {
+    const overrides = JSON.parse(localStorage.getItem('loan_taxas_overrides') || '{}');
+    if (typeof overrides[key] === 'number' && overrides[key] > 0) {
+      return { ...base, taxaAno: overrides[key] };
+    }
+  } catch {
+    // localStorage indisponível ou JSON corrompido — usa só o hardcoded
+  }
+  return base;
+}
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
@@ -154,6 +178,7 @@ function cleanName(desc: string): string {
 
 export default function DividasPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const today = new Date();
   const todayStr = toLocalIso(today);
   const currentYYYYMM = todayStr.slice(0, 7);
@@ -211,7 +236,7 @@ export default function DividasPage() {
       const parcelasRestantes = sorted.length;
       const totalRestante = sorted.reduce((s, t) => s + t.valor, 0);
       const dataFim = sorted[sorted.length - 1].data.slice(0, 7);
-      const meta = CONTRATO_META[key] || { nome: key, color: '#6b7280' };
+      const meta = getContratoMeta(key);
       const parcelaTotal = meta.parcelaTotal || (sorted[0].parcela_total || parcelasRestantes);
       const parcelaAtual = sorted[0].parcela_atual || 1;
       const progressPercent = Math.round(((parcelaAtual - 1) / parcelaTotal) * 100);
@@ -256,7 +281,7 @@ export default function DividasPage() {
       for (const tx of futureInstallments) {
         if (tx.data.slice(0, 7) !== month) continue;
         const key = tx.hash_transacao?.split('_')[0] || 'unknown';
-        const meta = CONTRATO_META[key] || { nome: key, color: '#6b7280' };
+        const meta = getContratoMeta(key);
         const nomeCurto = meta.nome.replace('Sicredi ', '').replace(' #1240412639', '');
         row[nomeCurto] = (Number(row[nomeCurto] || 0)) + tx.valor;
         total += tx.valor;
@@ -498,7 +523,17 @@ export default function DividasPage() {
                   Ataque primeiro a dívida mais cara (mais juros), mantendo o mínimo das outras.
                 </p>
                 {debtPlan.ordemAtaque.slice(0, 4).map((a, i) => (
-                  <div key={a.item.id} className="flex items-start gap-2 text-sm">
+                  // Cada contrato vira botão — abre Transações filtradas pela
+                  // descrição do empréstimo (parcelas futuras com hash
+                  // contratoKey_pN têm "Parcela empréstimo Sicredi <key>" no
+                  // descricao, então buscar por <key> matcha tudo).
+                  <button
+                    key={a.item.id}
+                    type="button"
+                    onClick={() => navigate(`/transacoes?busca=${encodeURIComponent(a.item.nome)}`)}
+                    className="flex items-start gap-2 text-sm w-full text-left hover:bg-muted/40 rounded-md -mx-2 px-2 py-1 transition-colors"
+                    aria-label={`Ver parcelas de ${a.item.nome}`}
+                  >
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{i + 1}</span>
                     <div className="min-w-0">
                       <p className="font-medium leading-tight truncate">{a.item.nome}</p>
@@ -507,7 +542,7 @@ export default function DividasPage() {
                         {a.jurosEvitaveis > 0 && ` · quitar à vista evita ~${formatCurrency(a.jurosEvitaveis)}`}
                       </p>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </CardContent>
             </Card>

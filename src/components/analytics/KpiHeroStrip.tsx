@@ -15,7 +15,7 @@ interface KpiHeroStripProps {
   taxaPoupanca: number;          // 0..1
   healthScore: number;           // 0..100
   healthNivel: string;
-  destaqueMes?: { titulo: string; valor: string };
+  destaqueMes?: { titulo: string; valor: string; onClick?: () => void };
 }
 
 /**
@@ -68,10 +68,18 @@ export function KpiHeroStrip({
     });
   }
 
+  const destaqueClickable = destaqueMes?.onClick;
+
   return (
     <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
       {kpis.map((k, i) => (
-        <Card key={i}>
+        <Card
+          key={i}
+          className={i === 3 && destaqueClickable ? 'cursor-pointer hover:bg-muted/40 transition-colors' : ''}
+          onClick={i === 3 && destaqueClickable ? destaqueClickable : undefined}
+          role={i === 3 && destaqueClickable ? 'button' : undefined}
+          tabIndex={i === 3 && destaqueClickable ? 0 : undefined}
+        >
           <CardContent className="p-4">
             <div className="flex items-start justify-between">
               <div className="text-xs text-muted-foreground">{k.label}</div>

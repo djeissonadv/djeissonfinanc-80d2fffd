@@ -408,7 +408,7 @@ export default function DashboardPage() {
                     <button
                       key={cat}
                       className="flex items-center justify-between w-full hover:bg-muted/50 rounded-lg p-2 -m-2 transition-colors cursor-pointer text-left min-w-0"
-                      onClick={() => navigate(`/transacoes?categoria=${encodeURIComponent(cat)}`)}
+                      onClick={() => navigate(`/transacoes?categoria=${encodeURIComponent(cat)}&mes=${billingMonth}&tipo=despesa`)}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         <div

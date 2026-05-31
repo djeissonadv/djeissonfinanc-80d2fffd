@@ -1,13 +1,17 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/format';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { TrendingUp, TrendingDown } from 'lucide-react';
 import type { CategoryTrend } from '@/lib/spending-patterns';
+import { useNavigate } from 'react-router-dom';
 
 interface TrendsListProps {
   trends: CategoryTrend[];
   title?: string;
   description?: string;
   maxItems?: number;
+  /** Quando informado, clicar numa linha leva pra /transacoes com filtro de
+   *  categoria + mês (mais útil pra investigar o "por quê subiu"). */
+  drillDownMes?: string;
 }
 
 /**
@@ -19,8 +23,16 @@ export function TrendsList({
   title = 'O que mudou',
   description = 'Categorias com variação relevante (3 últimos vs 3 anteriores)',
   maxItems = 6,
+  drillDownMes,
 }: TrendsListProps) {
+  const navigate = useNavigate();
   const filtered = trends.filter((t) => t.tendencia !== 'estavel').slice(0, maxItems);
+
+  const handleClick = (categoria: string) => {
+    if (!drillDownMes) return;
+    const params = new URLSearchParams({ categoria, mes: drillDownMes });
+    navigate(`/transacoes?${params.toString()}`);
+  };
 
   if (filtered.length === 0) {
     return (
@@ -43,8 +55,15 @@ export function TrendsList({
         <div className="divide-y">
           {filtered.map((t) => {
             const up = t.tendencia === 'subindo';
+            const Wrapper: any = drillDownMes ? 'button' : 'div';
             return (
-              <div key={t.categoria} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
+              <Wrapper
+                key={t.categoria}
+                type={drillDownMes ? 'button' : undefined}
+                onClick={drillDownMes ? () => handleClick(t.categoria) : undefined}
+                className={`flex items-center justify-between py-2.5 first:pt-0 last:pb-0 w-full text-left ${drillDownMes ? 'cursor-pointer hover:bg-muted/40 -mx-2 px-2 rounded-md transition-colors' : ''}`}
+                aria-label={drillDownMes ? `Ver transações de ${t.categoria}` : undefined}
+              >
                 <div className="flex items-center gap-2.5 min-w-0">
                   {up
                     ? <TrendingUp className="h-4 w-4 text-red-600 shrink-0" />
@@ -60,7 +79,7 @@ export function TrendsList({
                 <div className={`text-sm font-semibold tabular-nums ${up ? 'text-red-600' : 'text-green-600'}`}>
                   {up ? '+' : ''}{t.variacao.toFixed(0)}%
                 </div>
-              </div>
+              </Wrapper>
             );
           })}
         </div>

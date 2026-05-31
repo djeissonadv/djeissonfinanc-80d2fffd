@@ -49,6 +49,17 @@ export default function ProjecoesPage() {
   const [editValue, setEditValue] = useState('');
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
 
+  // Cenário "quitar empréstimos pós-venda do apto" — toggle no topo da página.
+  // Quando ligado, parcelas futuras de categoria=Empréstimos a partir do mês
+  // selecionado são removidas da projeção. localStorage pra persistir entre
+  // navegações.
+  const [quitacaoOn, setQuitacaoOn] = useState(() =>
+    localStorage.getItem('projecoes_quitacao_on') === '1',
+  );
+  const [quitacaoMes, setQuitacaoMes] = useState(
+    () => localStorage.getItem('projecoes_quitacao_mes') || '2026-08',
+  );
+
   // Fetch all transactions
   const { data: transactions, isLoading: loadingTx } = useQuery({
     queryKey: ['projecoes-transacoes', user?.id],
@@ -139,8 +150,18 @@ export default function ProjecoesPage() {
       valor: Number(o.valor),
       descricao: o.descricao,
     }));
-    return generateProjections(transactions, receitaBase, manualOvr);
-  }, [transactions, receitaBase, overrides]);
+    // Aplica simulação de quitação: remove parcelas FUTURAS de Empréstimos a
+    // partir do mês selecionado. Tudo que já foi pago (data passada) fica como
+    // tá. Categoria 'Empréstimos' cobre os carnês Sicredi + pagamentos MP.
+    const txInput = quitacaoOn
+      ? transactions.filter((t: any) => {
+          const isEmprestimo = t.categoria === 'Empréstimos';
+          const mesTx = (t.mes_competencia || t.data?.slice(0, 7) || '');
+          return !(isEmprestimo && mesTx >= quitacaoMes);
+        })
+      : transactions;
+    return generateProjections(txInput, receitaBase, manualOvr);
+  }, [transactions, receitaBase, overrides, quitacaoOn, quitacaoMes]);
 
   // Get all unique categories across projections
   const allCategories = useMemo(() => {
@@ -239,6 +260,58 @@ export default function ProjecoesPage() {
       </div>
 
       <RecorrentesProjecao />
+
+      {/* Cenário "quitação total dos empréstimos" — útil pra simular o impacto
+          da venda do apartamento (entrada Caixa) sendo usada pra liquidar os
+          contratos. Quando ligado, parcelas FUTURAS de categoria=Empréstimos a
+          partir do mês selecionado somem da projeção. Mostra de cara quanto
+          sobra de saldo livre adicional. */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <input
+                id="quitacao-toggle"
+                type="checkbox"
+                checked={quitacaoOn}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setQuitacaoOn(v);
+                  localStorage.setItem('projecoes_quitacao_on', v ? '1' : '0');
+                }}
+                className="h-4 w-4 shrink-0"
+              />
+              <label htmlFor="quitacao-toggle" className="text-sm cursor-pointer">
+                <span className="font-medium">Simular quitação total dos empréstimos</span>
+                <span className="text-muted-foreground"> a partir de</span>
+              </label>
+              <input
+                type="month"
+                value={quitacaoMes}
+                onChange={(e) => {
+                  setQuitacaoMes(e.target.value);
+                  localStorage.setItem('projecoes_quitacao_mes', e.target.value);
+                }}
+                disabled={!quitacaoOn}
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
+                aria-label="Mês da quitação"
+              />
+            </div>
+            {quitacaoOn && (
+              <Badge variant="outline" className="text-xs">
+                Empréstimos somem da projeção a partir de {quitacaoMes}
+              </Badge>
+            )}
+          </div>
+          {quitacaoOn && (
+            <p className="text-xs text-muted-foreground mt-2 ml-7">
+              Use isso pra ver o impacto da venda do apartamento sendo usada pra
+              liquidar contratos. Compare o saldo acumulado do chart abaixo com/sem
+              o toggle.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Análise Claude do cenário projetado — só roda sob demanda (clique do user) */}
       <DeepAnalysisCard

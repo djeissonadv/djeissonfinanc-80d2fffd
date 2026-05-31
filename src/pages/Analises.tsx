@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTodayIso } from '@/hooks/useTodayIso';
@@ -51,6 +52,7 @@ import {
  */
 export default function AnalisesPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -153,9 +155,21 @@ export default function AnalisesPage() {
     [allTransactions, receitaBase],
   );
 
-  // Destaque do mês (top categoria) — vai pro KPI hero
+  // Destaque do mês (top categoria) — vai pro KPI hero. Clicar leva pra
+  // Transações filtradas por essa categoria + mês atual.
   const destaque = composition[0]
-    ? { titulo: `Maior gasto: ${composition[0].categoria}`, valor: formatCurrency(composition[0].valor) }
+    ? {
+        titulo: `Maior gasto: ${composition[0].categoria}`,
+        valor: formatCurrency(composition[0].valor),
+        onClick: () => {
+          const params = new URLSearchParams({
+            categoria: composition[0].categoria,
+            mes: billingMonth,
+            tipo: 'despesa',
+          });
+          navigate(`/transacoes?${params.toString()}`);
+        },
+      }
     : undefined;
 
   // ---------------------------------------------------------------------
@@ -255,12 +269,12 @@ export default function AnalisesPage() {
             }
           />
         </div>
-        <CategoryComposition slices={composition} description={`Despesas do mês ${billingMonth}`} />
+        <CategoryComposition slices={composition} description={`Despesas do mês ${billingMonth} (clique pra ver lançamentos)`} drillDownMes={billingMonth} />
       </div>
 
       {/* 3. Insights: tendências + anomalias + recorrentes */}
       <div className="grid gap-4 md:grid-cols-3">
-        <TrendsList trends={trends} />
+        <TrendsList trends={trends} drillDownMes={billingMonth} />
         <AnomaliesList anomalies={anomalies} />
         <RecurringChargesList charges={recurring} />
       </div>
