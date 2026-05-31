@@ -120,9 +120,15 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
 
         for (const periodo of sortedPeriods) {
           const { despesas, pagamentos } = byPeriod[periodo];
-          const saldo = despesas - pagamentos;
+          // Fatura do período = marcador do extrato quando há (líquido já com
+          // saldo rolado + juros embutidos do MP rotativo), senão soma bruta.
+          // Usar só `despesas` aqui subestimava o saldo rolado quando o
+          // marcador existia (caso típico do MP — marcador R$ 2.222 vs soma
+          // bruta R$ 1.527, diferença = saldo + juros).
+          const faturaPeriodo = totalInformado[periodo] ?? despesas;
+          const saldo = faturaPeriodo - pagamentos;
 
-          historico.push({ periodo, despesas, pagamentos, saldo });
+          historico.push({ periodo, despesas: faturaPeriodo, pagamentos, saldo });
 
           if (periodo < billingMonth) {
             // Floor POR MÊS: não dá pra "dever negativo" de um mês (sobrepagamento
