@@ -90,29 +90,7 @@ export default function DashboardPage() {
   const creditCards = contas?.filter(c => c.tipo === 'credito') || [];
   const cardIds = creditCards.map(c => c.id);
 
-  const faturaQuery = useFaturaAcumulada(cardIds, billingMonth);
-  const faturaAcumulada = faturaQuery.data;
-
-  // TEMP DEBUG — vou remover assim que confirmar a causa.
-  const debugInfo = JSON.stringify({
-    billingMonth,
-    cardIds: cardIds.length,
-    isFetching: faturaQuery.isFetching,
-    isLoading: faturaQuery.isLoading,
-    isError: faturaQuery.isError,
-    error: faturaQuery.error ? String(faturaQuery.error) : null,
-    status: faturaQuery.status,
-    debugSteps: typeof window !== 'undefined' ? (window as any).__FATURA_DEBUG_STEPS || ['(nada)'] : '(server)',
-    invocations: typeof window !== 'undefined' ? (window as any).__FATURA_INVOCATIONS : '(server)',
-    cards: creditCards.map(c => ({ nome: c.nome, id: c.id.slice(0, 8) })),
-    faturaAcumuladaResult: faturaAcumulada ? Object.entries(faturaAcumulada).map(([id, f]: any) => ({
-      id: id.slice(0, 8),
-      valorFatura: f.valorFatura,
-      despesasMes: f.despesasMes,
-      pagamentosMes: f.pagamentosMes,
-      totalAPagar: f.totalAPagar,
-    })) : null,
-  }, null, 2);
+  const { data: faturaAcumulada } = useFaturaAcumulada(cardIds, billingMonth);
 
   const { data: parcelasAno } = useQuery({
     queryKey: ['dashboard', 'parcelas-ano', user?.id, year],
@@ -289,13 +267,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* TEMP DEBUG — banner visível pra diagnosticar marker não pego */}
-      <Card className="border-amber-300 bg-amber-50/50 dark:bg-amber-950/20">
-        <CardContent className="p-3">
-          <p className="text-xs font-medium text-amber-700 dark:text-amber-300 mb-1">DEBUG TEMPORÁRIO — marker da fatura</p>
-          <pre className="text-[10px] font-mono whitespace-pre-wrap break-all text-foreground/80">{debugInfo}</pre>
-        </CardContent>
-      </Card>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => navigate('/transacoes?tipo=receita')}>

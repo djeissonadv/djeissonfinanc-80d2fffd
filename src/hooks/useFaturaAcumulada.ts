@@ -33,8 +33,6 @@ interface FaturaAcumulada {
   valorFatura: number;
 }
 
-// Detection helpers moved to @/lib/csv-parser for reuse across parsers/hooks/pages.
-
 /**
  * Hook that calculates accumulated credit card balances.
  * If a fatura isn't fully paid, the remaining balance rolls over to the next month.
@@ -45,55 +43,21 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
   return useQuery({
     queryKey: ['fatura-acumulada', user?.id, cardIds.join(','), billingMonth],
     queryFn: async () => {
-      if (typeof window !== 'undefined') {
-        const w = window as any;
-        w.__FATURA_INVOCATIONS = (w.__FATURA_INVOCATIONS || 0) + 1;
-        // NÃO resetar steps — manter histórico de todas invocações
-        if (!w.__FATURA_DEBUG_STEPS) w.__FATURA_DEBUG_STEPS = [];
-        w.__FATURA_DEBUG_STEPS.push(`queryFn#${w.__FATURA_INVOCATIONS}:start@${new Date().toISOString().slice(11, 19)}`);
-      }
       if (cardIds.length === 0) return {} as Record<string, FaturaAcumulada>;
 
       // Fetch ALL transactions for these cards (including ignorar_dashboard
       // since fatura payments are marked as internal transfers but still
       // need to be counted for card balance calculation).
-      // Pagina manualmente pra não depender de fetchAllRows (que estava
-      // travando — investigando) e pra ter controle determinístico via order(id).
-      if (typeof window !== 'undefined') (window as any).__FATURA_DEBUG_STEPS.push('antes-do-supabase-call');
-      const allTxs: CardTxRow[] = [];
-      const PAGE = 1000;
-      let from = 0;
-      while (true) {
-        if (typeof window !== 'undefined') (window as any).__FATURA_DEBUG_STEPS.push(`page-${from}-start`);
-        const { data, error } = await supabase
-          .from('transacoes')
-          .select('conta_id, tipo, valor, descricao, data, mes_competencia')
-          .eq('user_id', user!.id)
-          .in('conta_id', cardIds)
-          .order('id')
-          .range(from, from + PAGE - 1);
-        if (typeof window !== 'undefined') (window as any).__FATURA_DEBUG_STEPS.push(`page-${from}-done:${data?.length ?? 'null'}:err=${error ? String(error).slice(0, 50) : 'no'}`);
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        allTxs.push(...data);
-        if (data.length < PAGE) break;
-        from += PAGE;
-        if (from > 50_000) break;
-      }
-      if (typeof window !== 'undefined') (window as any).__FATURA_DEBUG_STEPS.push(`total-rows:${allTxs.length}`);
+      const allTxs = await fetchAllRows<CardTxRow>(() => supabase
+        .from('transacoes')
+        .select('conta_id, tipo, valor, descricao, data, mes_competencia')
+        .eq('user_id', user!.id)
+        .in('conta_id', cardIds));
 
-      const dbg = (s: string) => {
-        if (typeof window !== 'undefined') (window as any).__FATURA_DEBUG_STEPS.push(s);
-      };
-
-      dbg('before-result-init');
       const result: Record<string, FaturaAcumulada> = {};
 
       for (const cardId of cardIds) {
-        const short = cardId.slice(0, 4);
-        dbg(`card-${short}-start`);
-        const cardTxs = (allTxs || []).filter(t => t.conta_id === cardId);
-        dbg(`card-${short}-cardTxs:${cardTxs.length}`);
+        const cardTxs = allTxs.filter(t => t.conta_id === cardId);
 
         // Group transactions by billing period
         // Use mes_competencia when available, fall back to YYYY-MM from data
@@ -103,54 +67,44 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
         // onde a acumulação por mês conta o saldo carregado em dobro).
         const totalInformado: Record<string, number> = {};
 
-        try {
-          let __i = 0;
-          for (const t of cardTxs) {
-            if (__i % 100 === 0) dbg(`card-${short}-iter:${__i}`);
-            __i++;
-            // Marcador do total informado: não é despesa — guarda pra sobrescrever.
-            if (isFaturaTotalMarker(t.descricao)) {
-              totalInformado[t.mes_competencia || t.data.substring(0, 7)] = Number(t.valor);
-              continue;
-            }
-            // "Saldo anterior da fatura" é artefato de rollover — este hook já
-            // acumula o saldo dos meses anteriores (saldoAnterior abaixo), então
-            // contar essa linha como despesa duplicaria o mês anterior inteiro.
-            if (isSaldoAnteriorFatura(t.descricao)) continue;
+        for (const t of cardTxs) {
+          // Marcador do total informado: não é despesa — guarda pra sobrescrever.
+          if (isFaturaTotalMarker(t.descricao)) {
+            totalInformado[t.mes_competencia || t.data.substring(0, 7)] = Number(t.valor);
+            continue;
+          }
+          // "Saldo anterior da fatura" é artefato de rollover — este hook já
+          // acumula o saldo dos meses anteriores (saldoAnterior abaixo), então
+          // contar essa linha como despesa duplicaria o mês anterior inteiro.
+          if (isSaldoAnteriorFatura(t.descricao)) continue;
 
-            const periodo = t.mes_competencia || t.data.substring(0, 7);
-            if (!byPeriod[periodo]) byPeriod[periodo] = { despesas: 0, pagamentos: 0, conciliado: 0 };
+          const periodo = t.mes_competencia || t.data.substring(0, 7);
+          if (!byPeriod[periodo]) byPeriod[periodo] = { despesas: 0, pagamentos: 0, conciliado: 0 };
 
-            if (t.tipo === 'despesa') {
-              byPeriod[periodo].despesas += Number(t.valor);
-            }
+          if (t.tipo === 'despesa') {
+            byPeriod[periodo].despesas += Number(t.valor);
+          }
 
-            // Detect payments (receita que abatem a fatura). "Crédito por
-            // parcelamento" é abatimento INTERNO não-caixa do parcelamento — não
-            // conta como pagamento (senão reduz o "A pagar" sem ter saído dinheiro).
-            if (isFaturaPayment(t.descricao) && !isCreditoParcelamento(t.descricao)) {
-              byPeriod[periodo].pagamentos += Math.abs(Number(t.valor));
-              // Pagamento EXPLÍCITO (conciliação/"Pagar fatura") — é o único que
-              // abate quando há "Total informado", pois o marcador já é líquido.
-              if (isConciliacaoPayment(t.descricao)) {
-                byPeriod[periodo].conciliado += Math.abs(Number(t.valor));
-              }
-            }
-
-            // Devolutions reduce despesas (valor is always stored positive; use abs for safety)
-            if (isDevolution(t.descricao) && t.tipo === 'receita') {
-              byPeriod[periodo].despesas -= Math.abs(Number(t.valor));
+          // Detect payments (receita que abatem a fatura). "Crédito por
+          // parcelamento" é abatimento INTERNO não-caixa do parcelamento — não
+          // conta como pagamento (senão reduz o "A pagar" sem ter saído dinheiro).
+          if (isFaturaPayment(t.descricao) && !isCreditoParcelamento(t.descricao)) {
+            byPeriod[periodo].pagamentos += Math.abs(Number(t.valor));
+            // Pagamento EXPLÍCITO (conciliação/"Pagar fatura") — é o único que
+            // abate quando há "Total informado", pois o marcador já é líquido.
+            if (isConciliacaoPayment(t.descricao)) {
+              byPeriod[periodo].conciliado += Math.abs(Number(t.valor));
             }
           }
-          dbg(`card-${short}-mainloop-done:${__i}`);
-        } catch (e: any) {
-          dbg(`card-${short}-MAINLOOP-ERROR:${String(e?.message || e).slice(0, 120)}`);
-          throw e;
+
+          // Devolutions reduce despesas (valor is always stored positive; use abs for safety)
+          if (isDevolution(t.descricao) && t.tipo === 'receita') {
+            byPeriod[periodo].despesas -= Math.abs(Number(t.valor));
+          }
         }
 
         // Sort periods chronologically
         const sortedPeriods = Object.keys(byPeriod).sort();
-        dbg(`card-${short}-sorted:${sortedPeriods.length}`);
 
         // Calculate running balance up to (but not including) current billing month
         let saldoAnterior = 0;
@@ -179,8 +133,6 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
         // Sem marcador, cai na acumulação antiga (saldoAnterior + mês − pago).
         const informado = totalInformado[billingMonth];
 
-        dbg(`card-${cardId.slice(0, 4)}-pre-totalAPagar:informado=${informado ?? 'null'}`);
-
         const totalAPagar = informado != null
           ? Math.max(0, informado - currentPeriod.conciliado)
           : saldoAnterior + currentPeriod.despesas - currentPeriod.pagamentos;
@@ -198,10 +150,8 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
           // tem pagamentos, escondendo o valor original).
           valorFatura: informado != null ? informado : currentPeriod.despesas,
         };
-        dbg(`card-${cardId.slice(0, 4)}-end`);
       }
 
-      dbg('before-return');
       return result;
     },
     enabled: !!user && cardIds.length > 0,
