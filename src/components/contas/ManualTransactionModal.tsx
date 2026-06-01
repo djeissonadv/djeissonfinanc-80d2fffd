@@ -43,6 +43,13 @@ export function ManualTransactionModal({
   const [selectedContaId, setSelectedContaId] = useState<string>(contaId || '');
   const [recorrente, setRecorrente] = useState(false);
   const [meses, setMeses] = useState('12');
+  // Parcelamento de compra de cartão — só faz sentido quando isCredito.
+  // Ex: comprou em jan/2026, está pagando a parcela 6 de 12. O sistema cria
+  // a parcela 6 em jan + automaticamente projeta 7,8,9,10,11,12 nos meses
+  // seguintes, todas com mesmo valor e mesmo grupo_parcela.
+  const [parcelado, setParcelado] = useState(false);
+  const [parcelaAtual, setParcelaAtual] = useState('1');
+  const [parcelaTotal, setParcelaTotal] = useState('12');
   const [submitting, setSubmitting] = useState(false);
   // Reembolso por outra pessoa — só faz sentido quando tipo='despesa'.
   // Quando ligado, criamos uma receita vinculada com categoria='Reembolsos'.
@@ -88,10 +95,21 @@ export function ManualTransactionModal({
       const mesesNum = recorrente ? Math.max(1, Math.min(60, parseInt(meses) || 1)) : 1;
       const grupoRec = recorrente ? crypto.randomUUID() : null;
 
-      // Build N rows (1 if not recurring, N if recurring)
+      // ── Parcelamento de cartão ────────────────────────────────────────
+      // Parcela X de Y: cria a parcela X no mês selecionado + projeta Y-X
+      // parcelas restantes nos meses seguintes (mesmo grupo_parcela).
+      // Ex: lançou parcela 6 de 12 em janeiro/2026 → cria 6/12 em jan e
+      // projeta 7/12 em fev, 8/12 em mar, ..., 12/12 em jul.
+      const ehParcelado = parcelado && isCredito && !recorrente;
+      const pAtual = ehParcelado ? Math.max(1, parseInt(parcelaAtual) || 1) : 0;
+      const pTotal = ehParcelado ? Math.max(pAtual, parseInt(parcelaTotal) || pAtual) : 0;
+      const totalRows = ehParcelado ? (pTotal - pAtual + 1) : mesesNum;
+      const grupoParc = ehParcelado ? crypto.randomUUID() : grupoRec;
+
+      // Build N rows (1 if simple, N if recurring/parcelado)
       const baseDate = new Date(data + 'T00:00:00');
       const rows = [];
-      for (let i = 0; i < mesesNum; i++) {
+      for (let i = 0; i < totalRows; i++) {
         const d = new Date(baseDate);
         d.setMonth(d.getMonth() + i);
         const isoDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -101,9 +119,14 @@ export function ManualTransactionModal({
               : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
           : null;
 
-        const hashSeed = recorrente
-          ? `${grupoRec}_${i}`
-          : `${descricao}_${valorNum}_${isoDate}`;
+        // Número da parcela: i=0 → pAtual, i=1 → pAtual+1, etc.
+        const parcelaIdx = ehParcelado ? pAtual + i : null;
+
+        const hashSeed = ehParcelado
+          ? `${grupoParc}_${parcelaIdx}`
+          : recorrente
+            ? `${grupoRec}_${i}`
+            : `${descricao}_${valorNum}_${isoDate}`;
         const hash = generateHash(isoDate, descricao, valorNum, pessoaNome) + '_manual_' + hashSeed.substring(0, 12);
 
         // Transferência interna (PIX entre cônjuges, entre contas próprias) NÃO
@@ -112,22 +135,33 @@ export function ManualTransactionModal({
         // flag que ele não tem como setar.
         const ehTransferencia = isTransferenciaInterna(descricao);
 
+        // Descrição da parcela: "Compra X (N/M)" pra fácil identificação.
+        const descricaoFinal = ehParcelado
+          ? `${descricao} (${parcelaIdx}/${pTotal})`
+          : descricao;
+
         rows.push({
           user_id: user.id,
           conta_id: selectedContaId,
           data: isoDate,
-          descricao,
-          descricao_normalizada: descricao.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim(),
+          descricao: descricaoFinal,
+          descricao_normalizada: descricaoFinal.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim(),
           valor: valorNum,
           tipo,
           categoria: autoCat || 'Outros',
           essencial,
+          parcela_atual: parcelaIdx,
+          parcela_total: ehParcelado ? pTotal : null,
           hash_transacao: hash,
           pessoa: pessoaNome,
           mes_competencia: mesComp,
-          grupo_parcela: grupoRec,
+          grupo_parcela: grupoParc,
           ignorar_dashboard: ehTransferencia,
-          observacoes: recorrente ? `Recorrente ${i + 1}/${mesesNum}` : null,
+          observacoes: recorrente
+            ? `Recorrente ${i + 1}/${mesesNum}`
+            : ehParcelado
+              ? `Parcelado ${parcelaIdx}/${pTotal}`
+              : null,
         });
       }
 
@@ -181,7 +215,9 @@ export function ManualTransactionModal({
       queryClient.invalidateQueries({ queryKey: ['fatura-acumulada'] });
 
       toast({
-        title: recorrente
+        title: ehParcelado
+          ? `Parcela ${pAtual}/${pTotal} adicionada + ${totalRows - 1} parcela${totalRows === 2 ? '' : 's'} projetada${totalRows === 2 ? '' : 's'}`
+          : recorrente
           ? `${mesesNum} lançamentos recorrentes adicionados`
           : reembolsoCriado
           ? 'Lançamento + reembolso criados'
@@ -195,6 +231,9 @@ export function ManualTransactionModal({
       setEssencial(false);
       setRecorrente(false);
       setMeses('12');
+      setParcelado(false);
+      setParcelaAtual('1');
+      setParcelaTotal('12');
       setReembolsoOn(false);
       setReembolsoPessoa('');
       setReembolsoValor('');
@@ -298,7 +337,12 @@ export function ManualTransactionModal({
               <Checkbox
                 id="recorrente"
                 checked={recorrente}
-                onCheckedChange={(v) => setRecorrente(!!v)}
+                onCheckedChange={(v) => {
+                  const on = !!v;
+                  setRecorrente(on);
+                  if (on) setParcelado(false);
+                }}
+                disabled={parcelado}
               />
               <Label htmlFor="recorrente" className="cursor-pointer text-sm font-medium">
                 Repetir todos os meses
@@ -322,6 +366,73 @@ export function ManualTransactionModal({
               </div>
             )}
           </div>
+
+          {/* Compra parcelada — só faz sentido em cartão de crédito.
+              Lança a parcela atual (X de Y) + projeta as Y-X parcelas
+              restantes automaticamente nos meses seguintes. */}
+          {isCredito && (
+            <div className="space-y-3 rounded-lg border p-3">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="parcelado"
+                  checked={parcelado}
+                  onCheckedChange={(v) => {
+                    const on = !!v;
+                    setParcelado(on);
+                    if (on) setRecorrente(false);
+                  }}
+                  disabled={recorrente}
+                />
+                <Label htmlFor="parcelado" className="cursor-pointer text-sm font-medium">
+                  Compra parcelada
+                </Label>
+              </div>
+              {parcelado && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Parcela atual</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max={parcelaTotal || undefined}
+                        value={parcelaAtual}
+                        onChange={e => setParcelaAtual(e.target.value)}
+                        placeholder="6"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Total de parcelas</Label>
+                      <Input
+                        type="number"
+                        min={parcelaAtual || '1'}
+                        value={parcelaTotal}
+                        onChange={e => setParcelaTotal(e.target.value)}
+                        placeholder="12"
+                      />
+                    </div>
+                  </div>
+                  {(() => {
+                    const a = Math.max(1, parseInt(parcelaAtual) || 1);
+                    const t = Math.max(a, parseInt(parcelaTotal) || a);
+                    const restantes = t - a;
+                    const v = Number(valor) || 0;
+                    return (
+                      <p className="text-xs text-muted-foreground">
+                        Lança a parcela <strong>{a}/{t}</strong> em {data}
+                        {restantes > 0 && (
+                          <> + projeta <strong>{restantes}</strong> parcela{restantes === 1 ? '' : 's'} ({a + 1}/{t} até {t}/{t}) nos meses seguintes</>
+                        )}.
+                        {v > 0 && t > a && (
+                          <> Total restante a pagar: <strong>{(v * (restantes + 1)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>.</>
+                        )}
+                      </p>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Reembolso por outra pessoa — só faz sentido em despesa. Quando
               ligado, cria automaticamente uma receita vinculada com categoria
