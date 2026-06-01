@@ -145,6 +145,35 @@ export default function ContasPage() {
     staleTime: 0,
   });
 
+  // Apaga só as transações da conta, mantém o cadastro. Útil pra cartão
+  // com histórico bagunçado que o user prefere relançar manualmente.
+  const wipeTransacoesMutation = useMutation({
+    mutationFn: async () => {
+      if (!editConta) return;
+      const { error } = await supabase
+        .from('transacoes')
+        .delete()
+        .eq('user_id', user!.id)
+        .eq('conta_id', editConta.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contas'] });
+      queryClient.invalidateQueries({ queryKey: ['saldos'] });
+      queryClient.invalidateQueries({ queryKey: ['faturas'] });
+      queryClient.invalidateQueries({ queryKey: ['fatura-acumulada'] });
+      queryClient.invalidateQueries({ queryKey: ['transacoes'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['contas-count-delete'] });
+      toast({ title: 'Transações apagadas', description: 'A conta foi mantida — você pode relançar do zero.' });
+      setDialogOpen(false);
+      resetForm();
+    },
+    onError: (err: any) => {
+      toast({ title: 'Erro ao apagar', description: err?.message || 'Tente novamente.', variant: 'destructive' });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async () => {
       if (!editConta) return;
@@ -409,6 +438,20 @@ export default function ContasPage() {
             <Button className="w-full" type="submit" disabled={!nome}>
               {editConta ? 'Salvar' : 'Criar'}
             </Button>
+            {editConta && countDelete !== null && countDelete > 0 && (
+              <ConfirmDelete
+                onConfirm={() => wipeTransacoesMutation.mutate()}
+                title={`Zerar transações de "${editConta.nome}"?`}
+                description={`Vai apagar ${countDelete.toLocaleString('pt-BR')} transação${countDelete === 1 ? '' : 'ões'} dessa conta, mantendo o cadastro. Útil quando o histórico tá bagunçado e você prefere relançar do zero. Esta ação não pode ser desfeita.`}
+                confirmLabel={`Apagar ${countDelete.toLocaleString('pt-BR')} transaç${countDelete === 1 ? 'ão' : 'ões'}`}
+                trigger={
+                  <Button type="button" variant="outline" className="w-full text-warning hover:text-warning border-warning/50" disabled={wipeTransacoesMutation.isPending}>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Zerar transações (manter cadastro)
+                  </Button>
+                }
+              />
+            )}
             {editConta && (
               <ConfirmDelete
                 onConfirm={() => deleteMutation.mutate()}
