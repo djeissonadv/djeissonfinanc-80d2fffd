@@ -150,6 +150,25 @@ export default function ContasPage() {
   const wipeTransacoesMutation = useMutation({
     mutationFn: async () => {
       if (!editConta) return;
+      // PASSO 1: zera reembolso_transacao_id em TODAS as transações que
+      // referenciam linhas que estamos prestes a deletar. A FK tem
+      // ON DELETE SET NULL; sem essa limpeza prévia, o Postgres tenta
+      // setar NULL numa linha que JÁ está marcada pra deletar (mesma
+      // operação) e joga "tuple to be deleted was already modified".
+      const { data: idsParaApagar } = await supabase
+        .from('transacoes')
+        .select('id')
+        .eq('user_id', user!.id)
+        .eq('conta_id', editConta.id);
+      const ids = (idsParaApagar || []).map(t => t.id);
+      if (ids.length > 0) {
+        await supabase
+          .from('transacoes')
+          .update({ reembolso_transacao_id: null })
+          .eq('user_id', user!.id)
+          .in('reembolso_transacao_id', ids);
+      }
+      // PASSO 2: agora apaga sem conflito de cascade.
       const { error } = await supabase
         .from('transacoes')
         .delete()
@@ -179,6 +198,21 @@ export default function ContasPage() {
       if (!editConta) return;
       // Apaga as transações da conta primeiro (evita órfãs / violação de FK),
       // depois a própria conta. Ação destrutiva — protegida por ConfirmDelete.
+      // Mesma proteção contra "tuple already modified" do wipeTransacoesMutation:
+      // limpa reembolso_transacao_id antes do mass delete.
+      const { data: idsParaApagar } = await supabase
+        .from('transacoes')
+        .select('id')
+        .eq('user_id', user!.id)
+        .eq('conta_id', editConta.id);
+      const ids = (idsParaApagar || []).map(t => t.id);
+      if (ids.length > 0) {
+        await supabase
+          .from('transacoes')
+          .update({ reembolso_transacao_id: null })
+          .eq('user_id', user!.id)
+          .in('reembolso_transacao_id', ids);
+      }
       const { error: txErr } = await supabase
         .from('transacoes')
         .delete()
