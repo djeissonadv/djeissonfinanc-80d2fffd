@@ -122,19 +122,23 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
           const { despesas, pagamentos } = byPeriod[periodo];
           // Fatura do período = marcador do extrato quando há (líquido já com
           // saldo rolado + juros embutidos do MP rotativo), senão soma bruta.
-          // Usar só `despesas` aqui subestimava o saldo rolado quando o
-          // marcador existia (caso típico do MP — marcador R$ 2.222 vs soma
-          // bruta R$ 1.527, diferença = saldo + juros).
-          const faturaPeriodo = totalInformado[periodo] ?? despesas;
+          const temMarker = totalInformado[periodo] != null;
+          const faturaPeriodo = temMarker ? totalInformado[periodo] : despesas;
           const saldo = faturaPeriodo - pagamentos;
 
           historico.push({ periodo, despesas: faturaPeriodo, pagamentos, saldo });
 
           if (periodo < billingMonth) {
-            // Floor POR MÊS: não dá pra "dever negativo" de um mês (sobrepagamento
-            // não vira crédito). Floorar o agregado deixava um mês pago a mais
-            // cancelar outro em aberto, escondendo dívida real.
-            saldoAnterior += Math.max(0, saldo);
+            // Marcador é CUMULATIVO: ele já reflete o saldo rolado dos meses
+            // anteriores embutido no número (MP rotativo coloca tudo no marker
+            // do mês). Se a gente somasse os meses anteriores POR CIMA do
+            // marker, contaria em dobro o que rolou. Então quando há marker
+            // num mês passado, ele substitui o acumulado (RESET).
+            // Sem marker: soma normal (mês isolado).
+            // Floor POR MÊS: sobrepagamento não vira crédito.
+            saldoAnterior = temMarker
+              ? Math.max(0, saldo)
+              : saldoAnterior + Math.max(0, saldo);
           }
         }
 
