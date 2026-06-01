@@ -179,21 +179,38 @@ export function useFaturaAcumulada(cardIds: string[], billingMonth: string) {
         const informado = totalInformado[billingMonth];
         const currentPeriod = byPeriod[billingMonth] || { despesas: 0, pagamentos: 0, conciliado: 0 };
 
+        // FATURA ENCERRADA PELO EMISSOR: se há marker no mês SEGUINTE ao
+        // billingMonth, a fatura corrente foi resolvida pelo emissor — não
+        // importa COMO (pagou integral, parcelou, ou rolou pro próximo). O
+        // marker do mês N+1 já é a verdade definitiva e inclui o que sobrou
+        // de N. Caso típico: extrato de março traz "Pagamento da fatura de
+        // fevereiro" + "Crédito por parcelamento", abatendo fevereiro
+        // inteira. O marker de março R$ 3.210,30 é o líquido depois disso.
+        const proxMes = sortedPeriods.find(p => p > billingMonth && totalInformado[p] != null);
+        const encerradaPeloEmissor = !!proxMes && informado != null;
+
         // Total a pagar do mês corrente:
-        // - Com marker: marker − conciliações (marker já cobre saldo anterior).
+        // - Encerrada pelo emissor: 0 (já resolvida via marker do próximo mês).
+        // - Com marker: marker − conciliações.
         // - Sem marker: saldoAnterior + despesas brutas − conciliações.
-        const totalAPagar = informado != null
-          ? Math.max(0, informado - currentPeriod.conciliado)
-          : saldoAnterior + currentPeriod.despesas - currentPeriod.conciliado;
+        const totalAPagar = encerradaPeloEmissor
+          ? 0
+          : informado != null
+            ? Math.max(0, informado - currentPeriod.conciliado)
+            : saldoAnterior + currentPeriod.despesas - currentPeriod.conciliado;
 
         result[cardId] = {
           saldoAnterior: informado != null ? 0 : saldoAnterior,
           despesasMes: currentPeriod.despesas,
-          pagamentosMes: currentPeriod.conciliado, // só conciliado abate
+          // Pagamentos "efetivos" do mês: se encerrada pelo emissor, considera
+          // o valor da fatura como pago (pra UI mostrar "Pagamentos: -R$ X");
+          // senão soma só conciliação manual.
+          pagamentosMes: encerradaPeloEmissor
+            ? (informado || currentPeriod.despesas)
+            : currentPeriod.conciliado,
           totalAPagar,
           historico: historico.filter(h => h.periodo <= billingMonth),
-          // Valor da fatura do mês corrente: marker manda quando há;
-          // senão saldoAnterior + despesas brutas (projeção do mês sem extrato).
+          // Valor da fatura: marker manda; senão projeta (saldoAnterior + bruto).
           valorFatura: informado != null
             ? informado
             : saldoAnterior + currentPeriod.despesas,
