@@ -269,14 +269,16 @@ export default function ContasPage() {
           ))
         )}
         {contas?.map(conta => {
-          const saldoAtual = (conta.saldo_inicial || 0) + (saldos?.[conta.id] || 0);
+          // Guards numéricos: fatura/saldo nunca podem ser NaN no render —
+          // formatCurrency com NaN propaga "R$ NaN" mas operações com NaN
+          // em filhos podem quebrar (ex: cor condicional, status).
+          const saldoAtual = Number(conta.saldo_inicial || 0) + Number(saldos?.[conta.id] || 0);
           const isCredito = conta.tipo === 'credito';
           const acum = faturaAcum?.[conta.id];
-          // Fatura total a pagar = saldo anterior + valor da fatura líquida do mês.
-          // valorFatura usa o "Total informado" do extrato quando há (MP/Black/Nubank),
-          // senão cai no bruto despesasMes. Mantém consistência com o card do Dashboard.
-          const faturaTotal = (acum?.saldoAnterior || 0) + (acum?.valorFatura || 0);
-          const pagamentoTotal = acum?.pagamentosMes || 0;
+          const saldoAntNum = Number(acum?.saldoAnterior) || 0;
+          const valorFaturaNum = Number(acum?.valorFatura) || 0;
+          const faturaTotal = saldoAntNum + valorFaturaNum;
+          const pagamentoTotal = Number(acum?.pagamentosMes) || 0;
           const status = isCredito ? getInvoiceStatus(faturaTotal, pagamentoTotal) : null;
 
           return (
