@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -187,6 +187,82 @@ export default function DashboardPage() {
   const totalDespesas = transacoesMes?.filter(t => t.tipo === 'despesa').reduce((s, t) => s + Number(t.valor), 0) || 0;
   const totalReceitas = transacoesMes?.filter(t => t.tipo === 'receita').reduce((s, t) => s + Number(t.valor), 0) || 0;
 
+  // Comparativo com mês anterior — totais do mês passado pra mostrar
+  // "↑ 12% vs mês passado" estilo Mobills.
+  const mesAnterior = month === 0
+    ? { month: 11, year: year - 1 }
+    : { month: month - 1, year };
+  const rangeAnt = getMonthRange(mesAnterior.month, mesAnterior.year);
+  const billingMonthAnt = `${mesAnterior.year}-${String(mesAnterior.month + 1).padStart(2, '0')}`;
+  const { data: totaisMesAnt } = useQuery({
+    queryKey: ['dashboard', 'totais-mes-anterior', user?.id, rangeAnt.start, rangeAnt.end, billingMonthAnt],
+    queryFn: async () => {
+      const byCompetencia = await fetchAllRows<{ tipo: string; valor: number }>(() => supabase
+        .from('transacoes')
+        .select('tipo, valor')
+        .eq('user_id', user!.id)
+        .eq('ignorar_dashboard', false)
+        .eq('mes_competencia', billingMonthAnt));
+      const byDate = await fetchAllRows<{ tipo: string; valor: number }>(() => supabase
+        .from('transacoes')
+        .select('tipo, valor')
+        .eq('user_id', user!.id)
+        .eq('ignorar_dashboard', false)
+        .is('mes_competencia', null)
+        .gte('data', rangeAnt.start)
+        .lte('data', rangeAnt.end));
+      const all = [...byCompetencia, ...byDate];
+      const receitas = all.filter(t => t.tipo === 'receita').reduce((s, t) => s + Number(t.valor), 0);
+      const despesas = all.filter(t => t.tipo === 'despesa').reduce((s, t) => s + Number(t.valor), 0);
+      return { receitas, despesas };
+    },
+    enabled: !!user,
+  });
+  // Calcula variação % vs mês anterior. Null se não tem base de comparação.
+  const variacao = (atual: number, anterior: number): number | null => {
+    if (!anterior || anterior === 0) return null;
+    return ((atual - anterior) / anterior) * 100;
+  };
+  const varReceitas = variacao(totalReceitas, totaisMesAnt?.receitas || 0);
+  const varDespesas = variacao(totalDespesas, totaisMesAnt?.despesas || 0);
+
+  // Orçamento por categoria — busca metas planejadas pra mostrar progresso
+  // visual no Dashboard estilo Mobills. Mostra só as categorias com meta > 0.
+  const { data: planejamento } = useQuery({
+    queryKey: ['dashboard', 'planejamento', user?.id, billingMonth],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('planejamento_categorias')
+        .select('categoria_nome, valor')
+        .eq('user_id', user!.id)
+        .eq('mes', billingMonth)
+        .gt('valor', 0);
+      return data || [];
+    },
+    enabled: !!user,
+  });
+  // Calcula o gasto real por categoria pra cruzar com a meta
+  const gastoPorCategoria = useMemo(() => {
+    const m: Record<string, number> = {};
+    (transacoesMes || []).forEach(t => {
+      if (t.tipo !== 'despesa') return;
+      const cat = t.categoria || 'Outros';
+      m[cat] = (m[cat] || 0) + Number(t.valor);
+    });
+    return m;
+  }, [transacoesMes]);
+  const orcamentosComProgresso = useMemo(() => {
+    return (planejamento || [])
+      .map(p => ({
+        categoria: p.categoria_nome,
+        meta: Number(p.valor),
+        gasto: gastoPorCategoria[p.categoria_nome] || 0,
+        pct: ((gastoPorCategoria[p.categoria_nome] || 0) / Number(p.valor)) * 100,
+      }))
+      .sort((a, b) => b.pct - a.pct)
+      .slice(0, 6);
+  }, [planejamento, gastoPorCategoria]);
+
   // Contas a pagar/receber pendentes do mês
   const { data: contasPR } = useQuery({
     queryKey: ['dashboard', 'contas-pr', user?.id, billingMonth],
@@ -287,6 +363,11 @@ export default function DashboardPage() {
                 <span className="h-2 w-2 rounded-full bg-primary" />
                 <span className="text-xs text-muted-foreground">Receitas</span>
                 <span className="text-sm font-semibold tabular">{formatCurrency(totalReceitas)}</span>
+                {varReceitas != null && Math.abs(varReceitas) >= 1 && (
+                  <span className={`text-[10px] font-medium tabular ${varReceitas >= 0 ? 'text-success' : 'text-destructive'}`}>
+                    {varReceitas >= 0 ? '↑' : '↓'} {Math.abs(varReceitas).toFixed(0)}%
+                  </span>
+                )}
               </button>
               <button
                 onClick={() => navigate('/transacoes?tipo=despesa')}
@@ -295,6 +376,11 @@ export default function DashboardPage() {
                 <span className="h-2 w-2 rounded-full bg-destructive" />
                 <span className="text-xs text-muted-foreground">Despesas</span>
                 <span className="text-sm font-semibold tabular">{formatCurrency(totalDespesas)}</span>
+                {varDespesas != null && Math.abs(varDespesas) >= 1 && (
+                  <span className={`text-[10px] font-medium tabular ${varDespesas <= 0 ? 'text-success' : 'text-destructive'}`}>
+                    {varDespesas >= 0 ? '↑' : '↓'} {Math.abs(varDespesas).toFixed(0)}%
+                  </span>
+                )}
               </button>
               {(totalAPagar > 0 || totalAReceber > 0) && (
                 <button
@@ -367,6 +453,73 @@ export default function DashboardPage() {
             );
           })}
         </div>
+      )}
+
+      {/* Orçamento por categoria — progresso visual estilo Mobills.
+          Top 6 categorias com meta planejada, ordenadas por % consumido. */}
+      {orcamentosComProgresso.length > 0 && (
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">Orçamento do mês</p>
+                <p className="text-sm font-medium mt-0.5">Acompanhamento por categoria</p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => navigate('/planejamento')}
+                className="text-xs rounded-full"
+              >
+                Editar metas
+              </Button>
+            </div>
+            <div className="space-y-3">
+              {orcamentosComProgresso.map(item => {
+                const pctClamped = Math.min(item.pct, 100);
+                const overBudget = item.pct > 100;
+                const aproximando = item.pct >= 80 && item.pct <= 100;
+                const barClass = overBudget
+                  ? 'bg-destructive'
+                  : aproximando
+                    ? 'bg-warning'
+                    : 'bg-primary';
+                return (
+                  <button
+                    key={item.categoria}
+                    type="button"
+                    onClick={() => navigate(`/transacoes?categoria=${encodeURIComponent(item.categoria)}&mes=${billingMonth}&tipo=despesa`)}
+                    className="w-full text-left rounded-xl p-3 bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-sm font-medium truncate">{item.categoria}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs tabular text-muted-foreground">
+                          {formatCurrency(item.gasto)} / {formatCurrency(item.meta)}
+                        </span>
+                        <span className={`text-xs font-semibold tabular ${overBudget ? 'text-destructive' : aproximando ? 'text-warning' : 'text-muted-foreground'}`}>
+                          {item.pct.toFixed(0)}%
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${barClass}`}
+                        style={{ width: `${pctClamped}%` }}
+                      />
+                      {overBudget && (
+                        <div
+                          className="h-full -mt-1.5 rounded-full bg-destructive/40"
+                          style={{ width: `${Math.min(item.pct - 100, 30)}%` }}
+                        />
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       <div className="grid gap-4 md:grid-cols-2">

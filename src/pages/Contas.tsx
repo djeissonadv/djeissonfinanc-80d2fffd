@@ -24,7 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { useFaturaAcumulada } from '@/hooks/useFaturaAcumulada';
-import { getFaturaStatus, getFaturaTotalAPagar } from '@/lib/fatura-status';
+import { CardFatura } from '@/components/CardFatura';
 import { format, parse } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -319,99 +319,60 @@ export default function ContasPage() {
           ))
         )}
         {contas?.map(conta => {
-          // Guards numéricos: fatura/saldo nunca podem ser NaN no render —
-          // formatCurrency com NaN propaga "R$ NaN" mas operações com NaN
-          // em filhos podem quebrar (ex: cor condicional, status).
           const saldoAtual = Number(conta.saldo_inicial || 0) + Number(saldos?.[conta.id] || 0);
           const isCredito = conta.tipo === 'credito';
-          const acum = faturaAcum?.[conta.id] || { saldoAnterior: 0, despesasMes: 0, pagamentosMes: 0, totalAPagar: 0, valorFatura: 0, historico: [] };
-          // Fonte ÚNICA — totalAPagar do hook (já calculado: saldoAnt + despesas - pag)
-          const totalAPagar = getFaturaTotalAPagar(acum);
-          const pagamentoTotal = Number(acum.pagamentosMes) || 0;
-          const status = isCredito ? getFaturaStatus(acum) : null;
+          const acum = faturaAcum?.[conta.id] || { saldoAnterior: 0, despesasMes: 0, pagamentosMes: 0, totalAPagar: 0, valorFatura: 0 };
+          const bp = `${year}-${String(month + 1).padStart(2, '0')}`;
 
+          // Cartão de crédito: usa CardFatura compartilhado (mesma UI do Dashboard).
+          if (isCredito) {
+            return (
+              <CardFatura
+                key={conta.id}
+                cardId={conta.id}
+                cardName={conta.nome}
+                diaVencimento={conta.dia_vencimento}
+                month={month}
+                fatura={acum}
+                onCardClick={() => openEdit(conta)}
+                onPagarClick={() => setPaymentConta({ id: conta.id, nome: conta.nome, fatura: acum.totalAPagar || 0 })}
+                onLancarClick={() => setManualTxConta({ id: conta.id, nome: conta.nome, tipo: 'credito', mesCompetencia: bp })}
+              />
+            );
+          }
+
+          // Conta débito: card próprio (saldo atual, sem fatura)
           return (
             <Card key={conta.id} className="cursor-pointer hover-lift" onClick={() => openEdit(conta)}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    {isCredito ? (
-                      <CreditCard className="h-5 w-5 text-accent" />
-                    ) : (
-                      <Banknote className="h-5 w-5 text-primary" />
-                    )}
+                    <Banknote className="h-5 w-5 text-primary" />
                     <span className="font-medium">{conta.nome}</span>
                   </div>
                   <Badge variant="outline" className="capitalize">{conta.tipo}</Badge>
                 </div>
 
-                {isCredito ? (
-                  <>
-                    <div className="mb-2">
-                      <p className="text-sm text-muted-foreground">Total a pagar</p>
-                      <p className={`text-xl font-bold tabular ${totalAPagar > 0 ? 'text-destructive' : 'text-success'}`}>
-                        {formatCurrency(totalAPagar)}
-                      </p>
-                    </div>
-                    {status && (
-                      <Badge variant="outline" className={`text-xs ${status.className}`}>
-                        {status.emoji} {status.label}
-                      </Badge>
-                    )}
-                    {pagamentoTotal > 0 && totalAPagar > 0 && (
-                      <p className="text-xs text-muted-foreground mt-1 tabular">
-                        Pago: {formatCurrency(pagamentoTotal)} no mês
-                      </p>
-                    )}
-                    <div className="flex gap-2 mt-2">
-                      {totalAPagar > 0 && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="flex-1 text-xs"
-                          onClick={(e) => { e.stopPropagation(); setPaymentConta({ id: conta.id, nome: conta.nome, fatura: totalAPagar }); }}
-                        >
-                          <DollarSign className="h-3 w-3 mr-1" /> Pagar
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="flex-1 text-xs"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const bp = `${year}-${String(month + 1).padStart(2, '0')}`;
-                          setManualTxConta({ id: conta.id, nome: conta.nome, tipo: 'credito', mesCompetencia: bp });
-                        }}
-                      >
-                        <PenLine className="h-3 w-3 mr-1" /> Lançamento
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Saldo atual</p>
-                      <p className={`text-xl font-bold ${saldoAtual >= 0 ? 'text-primary' : 'text-destructive'}`}>
-                        {formatCurrency(saldoAtual)}
-                      </p>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Saldo inicial: {formatCurrency(conta.saldo_inicial)}
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="mt-2 w-full text-xs"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setManualTxConta({ id: conta.id, nome: conta.nome, tipo: 'debito' });
-                      }}
-                    >
-                      <PenLine className="h-3 w-3 mr-1" /> Adicionar Lançamento
-                    </Button>
-                  </>
-                )}
+                <div>
+                  <p className="text-sm text-muted-foreground">Saldo atual</p>
+                  <p className={`text-xl font-bold tabular ${saldoAtual >= 0 ? 'text-primary' : 'text-destructive'}`}>
+                    {formatCurrency(saldoAtual)}
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1 tabular">
+                  Saldo inicial: {formatCurrency(conta.saldo_inicial)}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2 w-full text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setManualTxConta({ id: conta.id, nome: conta.nome, tipo: 'debito' });
+                  }}
+                >
+                  <PenLine className="h-3 w-3 mr-1" /> Adicionar Lançamento
+                </Button>
               </CardContent>
             </Card>
           );
