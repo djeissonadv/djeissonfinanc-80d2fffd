@@ -23,16 +23,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { useFaturaAcumulada } from '@/hooks/useFaturaAcumulada';
+import { getFaturaStatus, getFaturaTotalAPagar } from '@/lib/fatura-status';
 import { format, parse } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-
-function getInvoiceStatus(fatura: number, pagamento: number): { label: string; color: string; variant: 'default' | 'destructive' | 'outline' | 'secondary' } {
-  if (fatura <= 0) return { label: 'Sem fatura', color: '#9ca3af', variant: 'secondary' };
-  // Use 1 cent tolerance for float rounding
-  if (pagamento >= fatura - 0.01) return { label: 'Paga', color: '#10b981', variant: 'default' };
-  if (pagamento > 0) return { label: 'Parcialmente paga', color: '#f59e0b', variant: 'outline' };
-  return { label: 'Em aberto', color: '#ef4444', variant: 'destructive' };
-}
 
 export default function ContasPage() {
   const { user } = useAuth();
@@ -326,12 +319,11 @@ export default function ContasPage() {
           // em filhos podem quebrar (ex: cor condicional, status).
           const saldoAtual = Number(conta.saldo_inicial || 0) + Number(saldos?.[conta.id] || 0);
           const isCredito = conta.tipo === 'credito';
-          const acum = faturaAcum?.[conta.id];
-          const saldoAntNum = Number(acum?.saldoAnterior) || 0;
-          const valorFaturaNum = Number(acum?.valorFatura) || 0;
-          const faturaTotal = saldoAntNum + valorFaturaNum;
-          const pagamentoTotal = Number(acum?.pagamentosMes) || 0;
-          const status = isCredito ? getInvoiceStatus(faturaTotal, pagamentoTotal) : null;
+          const acum = faturaAcum?.[conta.id] || { saldoAnterior: 0, despesasMes: 0, pagamentosMes: 0, totalAPagar: 0, valorFatura: 0, historico: [] };
+          // Fonte ÚNICA — totalAPagar do hook (já calculado: saldoAnt + despesas - pag)
+          const totalAPagar = getFaturaTotalAPagar(acum);
+          const pagamentoTotal = Number(acum.pagamentosMes) || 0;
+          const status = isCredito ? getFaturaStatus(acum) : null;
 
           return (
             <Card key={conta.id} className="cursor-pointer hover-lift" onClick={() => openEdit(conta)}>
@@ -351,33 +343,28 @@ export default function ContasPage() {
                 {isCredito ? (
                   <>
                     <div className="mb-2">
-                      <p className="text-sm text-muted-foreground">Fatura atual</p>
-                      <p className="text-xl font-bold text-destructive">{formatCurrency(faturaTotal)}</p>
+                      <p className="text-sm text-muted-foreground">Total a pagar</p>
+                      <p className={`text-xl font-bold tabular ${totalAPagar > 0 ? 'text-destructive' : 'text-success'}`}>
+                        {formatCurrency(totalAPagar)}
+                      </p>
                     </div>
                     {status && (
-                      <Badge
-                        variant={status.variant}
-                        className="text-xs"
-                        style={status.variant === 'outline' ? { borderColor: status.color, color: status.color } : status.variant === 'default' ? { backgroundColor: status.color } : undefined}
-                      >
-                        {status.label === 'Paga' && '🟢 '}
-                        {status.label === 'Em aberto' && '🔴 '}
-                        {status.label === 'Parcialmente paga' && '🟡 '}
-                        {status.label}
+                      <Badge variant="outline" className={`text-xs ${status.className}`}>
+                        {status.emoji} {status.label}
                       </Badge>
                     )}
-                    {pagamentoTotal > 0 && pagamentoTotal < faturaTotal && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Pago: {formatCurrency(pagamentoTotal)} de {formatCurrency(faturaTotal)}
+                    {pagamentoTotal > 0 && totalAPagar > 0 && (
+                      <p className="text-xs text-muted-foreground mt-1 tabular">
+                        Pago: {formatCurrency(pagamentoTotal)} no mês
                       </p>
                     )}
                     <div className="flex gap-2 mt-2">
-                      {faturaTotal > 0 && pagamentoTotal < faturaTotal && (
+                      {totalAPagar > 0 && (
                         <Button
                           size="sm"
                           variant="outline"
                           className="flex-1 text-xs"
-                          onClick={(e) => { e.stopPropagation(); setPaymentConta({ id: conta.id, nome: conta.nome, fatura: faturaTotal - pagamentoTotal }); }}
+                          onClick={(e) => { e.stopPropagation(); setPaymentConta({ id: conta.id, nome: conta.nome, fatura: totalAPagar }); }}
                         >
                           <DollarSign className="h-3 w-3 mr-1" /> Pagar
                         </Button>

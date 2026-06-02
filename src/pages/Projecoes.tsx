@@ -64,10 +64,14 @@ export default function ProjecoesPage() {
   const { data: transactions, isLoading: loadingTx } = useQuery({
     queryKey: ['projecoes-transacoes', user?.id],
     queryFn: async () => {
+      // CRÍTICO: filtrar ignorar_dashboard=false — projeções sem isso
+      // incluem pagamentos de fatura, transferências entre cônjuges,
+      // markers de extrato → infla todas as categorias projetadas.
       const data = await fetchAllRows(() => supabase
         .from('transacoes')
         .select('data, descricao, valor, tipo, categoria, categoria_id, parcela_atual, parcela_total, grupo_parcela, ignorar_dashboard, essencial, conta_id')
         .eq('user_id', user!.id)
+        .eq('ignorar_dashboard', false)
         .gte('data', `${new Date().getFullYear() - 1}-01-01`));
       return data;
     },

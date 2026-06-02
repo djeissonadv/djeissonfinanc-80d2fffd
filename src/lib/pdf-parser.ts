@@ -474,47 +474,11 @@ export function parseMercadoPago(
     }
   }
 
-  // Reconciliation: if header total > sum of parsed lines, inject "Saldo anterior" transaction
-  // This handles Mercado Pago's rolled-over unpaid balance from previous months
-  if (headerTotal && headerTotal > 0 && detectedDueDate) {
-    const payments = transactions.filter(t => t.classification === 'payment');
-    const importable = transactions.filter(t => t.classification !== 'payment');
-    const sumDespesas = importable.filter(t => t.tipo === 'despesa').reduce((s, t) => s + t.valor, 0);
-    const sumReceitas = importable.filter(t => t.tipo === 'receita').reduce((s, t) => s + t.valor, 0);
-    const linesFatura = sumDespesas - sumReceitas;
-    const missing = headerTotal - linesFatura;
-
-    if (missing > 0.50) {
-      const dueDate = `${detectedDueDate.year}-${String(detectedDueDate.month + 1).padStart(2, '0')}-01`;
-      const desc = 'Saldo anterior da fatura';
-      const hash = generateHash(dueDate, desc, parseFloat(missing.toFixed(2)), defaultPessoa);
-
-      transactions.push({
-        data: dueDate,
-        descricao: desc,
-        descricao_normalizada: normalizeDescription(desc),
-        valor: parseFloat(missing.toFixed(2)),
-        tipo: 'despesa',
-        parcela_atual: null,
-        parcela_total: null,
-        pessoa: defaultPessoa,
-        hash_transacao: hash,
-        codigo_cartao: null,
-        valor_dolar: null,
-        classification: 'simple',
-        source_line_number: 0,
-        source_line_content: `Saldo anterior: header R$ ${headerTotal.toFixed(2)} - linhas R$ ${linesFatura.toFixed(2)} = R$ ${missing.toFixed(2)}`,
-      });
-
-      lineLogs.push({
-        lineNumber: 0,
-        content: `Saldo anterior não listado: R$ ${missing.toFixed(2)}`,
-        status: 'importada',
-        reason: 'Saldo anterior da fatura (rollover de mês anterior sem pagamento total)',
-        hash_transacao: hash,
-      });
-    }
-  }
+  // Reconciliação sintética REMOVIDA — Mercado Pago rotativo injetava aqui
+  // uma linha fictícia "Saldo anterior da fatura" pra fazer a soma bater
+  // com o marker do extrato. Com a regra nova (fatura = soma despesas
+  // reais - pagamentos), o marker é IGNORADO. Não há mais reconciliação
+  // sintética: o que está no extrato detalhado é o que conta.
 
   return {
     transactions,

@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { useFontesReceita } from '@/hooks/useFontesReceita';
 import { useFaturaAcumulada } from '@/hooks/useFaturaAcumulada';
+import { getFaturaStatus, getFaturaTotalAPagar } from '@/lib/fatura-status';
 import { fetchAllRows } from '@/lib/supabase-fetch';
 
 export default function DashboardPage() {
@@ -351,27 +352,12 @@ export default function DashboardPage() {
       {creditCards.length > 0 && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {creditCards.map(card => {
-            const fatura = faturaAcumulada?.[card.id];
-            const saldoAnt = fatura?.saldoAnterior || 0;
-            const despesasMes = fatura?.despesasMes || 0;
-            const pagMes = fatura?.pagamentosMes || 0;
-            const totalAPagarCard = fatura?.totalAPagar || 0;
-            // valorFatura = marker do extrato quando há (Black/Nubank/MP), senão
-            // bruto. Mantém o número visível mesmo com fatura paga.
-            const valorFaturaCard = fatura?.valorFatura || 0;
-
-            // Status do cartão. "Sem fatura" só quando NADA houve (sem despesa
-            // bruta, sem marker, sem saldo herdado). "Paga" requer que tenha
-            // existido fatura (valorFatura ou despesasMes > 0); senão é o
-            // estado neutro ("Sem fatura"), não "Paga".
-            const teveFatura = valorFaturaCard > 0 || despesasMes > 0 || saldoAnt > 0;
-            const status = !teveFatura
-              ? { label: 'Sem fatura', emoji: '', color: '#9ca3af' }
-              : totalAPagarCard <= 0
-                ? { label: 'Paga', emoji: '🟢', color: '#10b981' }
-                : pagMes > 0
-                  ? { label: 'Parcialmente paga', emoji: '🟡', color: '#f59e0b' }
-                  : { label: 'Em aberto', emoji: '🔴', color: '#ef4444' };
+            const fatura = faturaAcumulada?.[card.id] || { saldoAnterior: 0, despesasMes: 0, pagamentosMes: 0, totalAPagar: 0, valorFatura: 0, historico: [] };
+            const saldoAnt = fatura.saldoAnterior;
+            const despesasMes = fatura.despesasMes;
+            const pagMes = fatura.pagamentosMes;
+            const totalAPagarCard = getFaturaTotalAPagar(fatura);
+            const status = getFaturaStatus(fatura);
 
             return (
               <Card key={card.id} className="cursor-pointer hover-lift" onClick={() => setFaturaDrawer({ open: true, cardId: card.id, cardName: card.nome })}>
@@ -379,11 +365,7 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2 mb-2">
                     <CreditCard className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-medium">{card.nome}</span>
-                    <Badge
-                      variant="outline"
-                      className="ml-auto text-xs"
-                      style={{ borderColor: status.color, color: status.color }}
-                    >
+                    <Badge variant="outline" className={`ml-auto text-xs ${status.className}`}>
                       {status.emoji} {status.label}
                     </Badge>
                   </div>
@@ -395,25 +377,20 @@ export default function DashboardPage() {
                   {saldoAnt > 0 && (
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-muted-foreground">Saldo anterior</span>
-                      <span className="text-warning font-medium">{formatCurrency(saldoAnt)}</span>
+                      <span className="text-warning font-medium tabular">{formatCurrency(saldoAnt)}</span>
                     </div>
                   )}
                   <div className="flex justify-between text-xs mb-1">
-                    <span className="text-muted-foreground">Fatura do mês</span>
-                    <span className="font-medium">{formatCurrency(valorFaturaCard)}</span>
+                    <span className="text-muted-foreground">Despesas do mês</span>
+                    <span className="font-medium tabular">{formatCurrency(despesasMes)}</span>
                   </div>
-                  {/* Pagamentos: prefere o valor explícito do mês; se a fatura
-                      tá quitada via marker (valorFatura > 0 mas totalAPagar=0),
-                      mostra o valor da fatura pra evidenciar que foi pago. */}
-                  {(pagMes > 0 || (valorFaturaCard > 0 && totalAPagarCard <= 0)) && (
+                  {pagMes > 0 && (
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-muted-foreground">Pagamentos</span>
-                      <span className="text-success font-medium">
-                        -{formatCurrency(pagMes > 0 ? pagMes : valorFaturaCard)}
-                      </span>
+                      <span className="text-success font-medium tabular">-{formatCurrency(pagMes)}</span>
                     </div>
                   )}
-                  {(saldoAnt > 0 || pagMes > 0 || (valorFaturaCard > 0 && totalAPagarCard <= 0)) && (
+                  {(saldoAnt > 0 || pagMes > 0) && (
                     <div className="border-t border-border/50 mt-1 pt-1" />
                   )}
                   <div className="flex justify-between items-baseline">

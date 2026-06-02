@@ -462,48 +462,10 @@ export function parseSicrediCSV(csvText: string, defaultPessoa: string = 'Titula
     });
   });
 
-  // If the CSV header declares a fatura total, compare against sum of parsed lines.
-  // If there's a positive difference (e.g., encargos/fees not listed as individual lines),
-  // inject a synthetic "Encargos da Fatura" transaction to reconcile.
-  if (headerFaturaTotal !== null && headerFaturaTotal > 0 && detectedDueDate) {
-    const sumDespesas = transactions.filter(t => t.tipo === 'despesa').reduce((s, t) => s + t.valor, 0);
-    // Exclude fatura payments (they settle the previous balance, not the current invoice)
-    // but KEEP credits like "Crédito por parcelamento" since those reduce the current invoice.
-    const sumReceitas = transactions
-      .filter(t => t.tipo === 'receita' && !/pag\s*fat|pagamento\s+(d[ae]\s+)?fatura|pagamento recebido/i.test(t.descricao))
-      .reduce((s, t) => s + t.valor, 0);
-    const linesFatura = sumDespesas - sumReceitas;
-    const missing = headerFaturaTotal - linesFatura;
-
-    if (missing > 0.01) {
-      const dueDate = `${detectedDueDate.year}-${String(detectedDueDate.month + 1).padStart(2, '0')}-01`;
-      const desc = 'Encargos da Fatura';
-      const hash = generateHash(dueDate, desc, parseFloat(missing.toFixed(2)), defaultPessoa);
-
-      transactions.push({
-        data: dueDate,
-        descricao: desc,
-        descricao_normalizada: normalizeDescription(desc),
-        valor: parseFloat(missing.toFixed(2)),
-        tipo: 'despesa',
-        parcela_atual: null,
-        parcela_total: null,
-        pessoa: defaultPessoa,
-        hash_transacao: hash,
-        codigo_cartao: null,
-        valor_dolar: null,
-        classification: 'simple',
-      });
-
-      lineLogs.push({
-        lineNumber: 0,
-        content: `Diferença cabeçalho vs linhas: R$ ${missing.toFixed(2)} (fatura header: R$ ${headerFaturaTotal.toFixed(2)}, soma linhas: R$ ${linesFatura.toFixed(2)})`,
-        status: 'importada',
-        reason: 'Encargos/taxas não listados como transações individuais no CSV',
-        hash_transacao: hash,
-      });
-    }
-  }
+  // Reconciliação sintética REMOVIDA — mesma razão do pdf-parser.
+  // A regra nova (fatura = despesas reais - pagamentos) ignora o marker
+  // do header, então não há mais necessidade de "Encargos da Fatura"
+  // fictício pra fazer a soma bater.
 
   return {
     contaDetectada,
