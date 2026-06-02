@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { useFontesReceita } from '@/hooks/useFontesReceita';
 import { useFaturaAcumulada } from '@/hooks/useFaturaAcumulada';
-import { getFaturaStatus, getFaturaTotalAPagar } from '@/lib/fatura-status';
+import { CardFatura } from '@/components/CardFatura';
 import { fetchAllRows } from '@/lib/supabase-fetch';
 
 export default function DashboardPage() {
@@ -352,55 +352,18 @@ export default function DashboardPage() {
       {creditCards.length > 0 && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {creditCards.map(card => {
-            const fatura = faturaAcumulada?.[card.id] || { saldoAnterior: 0, despesasMes: 0, pagamentosMes: 0, totalAPagar: 0, valorFatura: 0, historico: [] };
-            const saldoAnt = fatura.saldoAnterior;
-            const despesasMes = fatura.despesasMes;
-            const pagMes = fatura.pagamentosMes;
-            const totalAPagarCard = getFaturaTotalAPagar(fatura);
-            const status = getFaturaStatus(fatura);
-
+            const fatura = faturaAcumulada?.[card.id] || { saldoAnterior: 0, despesasMes: 0, pagamentosMes: 0, totalAPagar: 0, valorFatura: 0 };
             return (
-              <Card key={card.id} className="cursor-pointer hover-lift" onClick={() => setFaturaDrawer({ open: true, cardId: card.id, cardName: card.nome })}>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <CreditCard className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">{card.nome}</span>
-                    <Badge variant="outline" className={`ml-auto text-xs ${status.className}`}>
-                      {status.emoji} {status.label}
-                    </Badge>
-                  </div>
-                  {card.dia_vencimento && (
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Vence dia {card.dia_vencimento} · {String(card.dia_vencimento).padStart(2, '0')}/{String(month + 1).padStart(2, '0')}
-                    </p>
-                  )}
-                  {saldoAnt > 0 && (
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="text-muted-foreground">Saldo anterior</span>
-                      <span className="text-warning font-medium tabular">{formatCurrency(saldoAnt)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-muted-foreground">Despesas do mês</span>
-                    <span className="font-medium tabular">{formatCurrency(despesasMes)}</span>
-                  </div>
-                  {pagMes > 0 && (
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="text-muted-foreground">Pagamentos</span>
-                      <span className="text-success font-medium tabular">-{formatCurrency(pagMes)}</span>
-                    </div>
-                  )}
-                  {(saldoAnt > 0 || pagMes > 0) && (
-                    <div className="border-t border-border/50 mt-1 pt-1" />
-                  )}
-                  <div className="flex justify-between items-baseline">
-                    <span className="text-xs text-muted-foreground">Total a pagar</span>
-                    <span className={`text-lg font-bold ${totalAPagarCard > 0 ? 'text-destructive' : 'text-success'}`}>
-                      {formatCurrency(Math.max(0, totalAPagarCard))}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
+              <CardFatura
+                key={card.id}
+                cardId={card.id}
+                cardName={card.nome}
+                diaVencimento={card.dia_vencimento}
+                month={month}
+                fatura={fatura}
+                onCardClick={() => setFaturaDrawer({ open: true, cardId: card.id, cardName: card.nome })}
+                compact
+              />
             );
           })}
         </div>

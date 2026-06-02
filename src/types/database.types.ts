@@ -196,6 +196,14 @@ export const CATEGORIAS_CONFIG: Record<string, CategoriaConfig> = {
     essencial: false,
     subcategorias: []
   },
+  "Pagamento Fatura": {
+    // Categoria interna usada pelo PaymentModal — sempre vem com
+    // ignorar_dashboard=true. Listada aqui pra evitar "categoria
+    // desconhecida" em filtros/relatórios. Cor neutra.
+    cor: "#6b7280",
+    essencial: false,
+    subcategorias: []
+  },
   "Outras receitas": {
     cor: "#9ca3af",
     essencial: false,
@@ -211,7 +219,7 @@ export const CATEGORIAS = Object.keys(CATEGORIAS_CONFIG);
 // categoria pra refletir que é movimento interno, não consumo. Combine com
 // ignorar_dashboard=true pra não contar nos totais do mês.
 export const CATEGORIAS_DESPESA = CATEGORIAS.filter(c =>
-  !['Salário/Pró-labore', 'Freelance/PJ', 'Receita Produtora', 'Investimentos', 'Vendas', 'Reembolsos', 'Devoluções', 'Outras receitas'].includes(c)
+  !['Salário/Pró-labore', 'Freelance/PJ', 'Receita Produtora', 'Investimentos', 'Vendas', 'Reembolsos', 'Devoluções', 'Outras receitas', 'Pagamento Fatura'].includes(c)
 );
 
 export const CATEGORIAS_RECEITA = [
