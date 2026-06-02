@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency } from '@/lib/format';
 import { generateHash } from '@/lib/csv-parser';
 import { fetchAllRows } from '@/lib/supabase-fetch';
-import { AlertTriangle, CheckCircle2, Loader2, Stethoscope } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Loader2, Stethoscope } from 'lucide-react';
 
 interface Props {
   open: boolean;
@@ -71,6 +71,16 @@ export function DiagnosticoParcelamentos({ open, onOpenChange }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [preenchendo, setPreenchendo] = useState<string | null>(null);
+  const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
+
+  const toggleExp = (k: string) => {
+    setExpandidos(prev => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
 
   // Busca TODAS as transações parceladas (parcela_total > 1) — sem filtro de
   // data. Necessário pra ver o grupo todo.
@@ -259,46 +269,106 @@ export function DiagnosticoParcelamentos({ open, onOpenChange }: Props) {
                 Total de parcelas faltando: <strong>{grupos.reduce((s, g) => s + g.faltam, 0)}</strong>.
               </div>
             </div>
-            {grupos.map(g => (
-              <div key={g.key} className="rounded-xl border border-border bg-secondary/40 p-4 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium truncate">{g.descricaoBase}</p>
-                    <p className="text-xs text-muted-foreground tabular">
-                      {g.contaNome} • {g.parcelasExistentes.length} de {g.parcelaTotal} parcelas existentes
-                      {g.ultimoMesCompetencia && ` • última: ${g.ultimoMesCompetencia}`}
-                    </p>
-                  </div>
-                  <Badge variant="outline" className="border-warning/40 text-warning shrink-0 tabular">
-                    Faltam {g.faltam}
-                  </Badge>
-                </div>
+            {grupos.map(g => {
+              const isOpen = expandidos.has(g.key);
+              const preview = previsao(g);
+              const alertas: string[] = [];
+              // Sanity checks pra alertar o user antes dele clicar
+              if (g.parcelaTotal > 60) alertas.push(`parcela_total = ${g.parcelaTotal} parece muito alto`);
+              if (g.parcelasExistentes.length < 2) alertas.push('só 1 parcela existente — confira se é parcelamento legítimo');
+              const valores = g.parcelasExistentes.map(p => Number(p.valor));
+              const maxV = Math.max(...valores);
+              const minV = Math.min(...valores);
+              if (valores.length > 1 && maxV / minV > 1.5) alertas.push('valores das parcelas variam mais de 50% — média pode estar errada');
+              const ultimaProj = preview[preview.length - 1];
+              if (ultimaProj?.mesComp && ultimaProj.mesComp < new Date().toISOString().slice(0, 7)) {
+                alertas.push('a última parcela cairia em mês PASSADO — confira se já não acabou');
+              }
 
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-lg bg-muted/40 px-2 py-1.5">
-                    <span className="text-muted-foreground">Valor médio</span>
-                    <p className="font-medium tabular">{formatCurrency(g.valorMedio)}</p>
+              return (
+                <div key={g.key} className="rounded-xl border border-border bg-secondary/40 p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{g.descricaoBase}</p>
+                      <p className="text-xs text-muted-foreground tabular">
+                        {g.contaNome} • {g.parcelasExistentes.length} de {g.parcelaTotal} parcelas existentes
+                        {g.ultimoMesCompetencia && ` • última: ${g.ultimoMesCompetencia}`}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="border-warning/40 text-warning shrink-0 tabular">
+                      Faltam {g.faltam}
+                    </Badge>
                   </div>
-                  <div className="rounded-lg bg-muted/40 px-2 py-1.5">
-                    <span className="text-muted-foreground">Total a criar</span>
-                    <p className="font-medium tabular">{formatCurrency(g.valorMedio * g.faltam)}</p>
-                  </div>
-                </div>
 
-                <Button
-                  size="sm"
-                  className="w-full"
-                  disabled={preencherMutation.isPending}
-                  onClick={() => preencherMutation.mutate(g)}
-                >
-                  {preenchendo === g.key ? (
-                    <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> Criando {g.faltam} parcelas...</>
-                  ) : (
-                    <>Preencher {g.faltam} parcela{g.faltam === 1 ? '' : 's'} faltante{g.faltam === 1 ? '' : 's'}</>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-lg bg-muted/40 px-2 py-1.5">
+                      <span className="text-muted-foreground">Valor médio</span>
+                      <p className="font-medium tabular">{formatCurrency(g.valorMedio)}</p>
+                    </div>
+                    <div className="rounded-lg bg-muted/40 px-2 py-1.5">
+                      <span className="text-muted-foreground">Total a criar</span>
+                      <p className="font-medium tabular">{formatCurrency(g.valorMedio * g.faltam)}</p>
+                    </div>
+                  </div>
+
+                  {alertas.length > 0 && (
+                    <div className="rounded-lg border border-warning/30 bg-warning/5 p-2 text-xs space-y-0.5">
+                      {alertas.map((a, i) => (
+                        <p key={i} className="flex items-start gap-1.5">
+                          <AlertTriangle className="h-3 w-3 text-warning shrink-0 mt-0.5" />
+                          <span>{a}</span>
+                        </p>
+                      ))}
+                    </div>
                   )}
-                </Button>
-              </div>
-            ))}
+
+                  <button
+                    type="button"
+                    onClick={() => toggleExp(g.key)}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {isOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    {isOpen ? 'Esconder' : 'Ver'} prévia ({preview.length} parcelas que serão criadas)
+                  </button>
+
+                  {isOpen && (
+                    <div className="rounded-lg bg-background/40 border border-border/50 max-h-60 overflow-y-auto">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-background/80 backdrop-blur">
+                          <tr className="border-b">
+                            <th className="text-left px-3 py-2 font-medium text-muted-foreground">#</th>
+                            <th className="text-left px-3 py-2 font-medium text-muted-foreground">Competência</th>
+                            <th className="text-right px-3 py-2 font-medium text-muted-foreground">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {preview.map(p => (
+                            <tr key={p.parcelaIdx} className="border-b border-border/30 last:border-0">
+                              <td className="px-3 py-1.5 tabular">{p.parcelaIdx}/{g.parcelaTotal}</td>
+                              <td className="px-3 py-1.5 tabular">{p.mesComp || '—'}</td>
+                              <td className="px-3 py-1.5 text-right tabular">{formatCurrency(g.valorMedio)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    disabled={preencherMutation.isPending}
+                    onClick={() => preencherMutation.mutate(g)}
+                  >
+                    {preenchendo === g.key ? (
+                      <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> Criando {g.faltam} parcelas...</>
+                    ) : (
+                      <>Preencher {g.faltam} parcela{g.faltam === 1 ? '' : 's'} faltante{g.faltam === 1 ? '' : 's'}</>
+                    )}
+                  </Button>
+                </div>
+              );
+            })}
           </div>
         )}
       </DialogContent>
@@ -311,4 +381,18 @@ function incrementYM(ym: string, delta: number): string {
   const [y, m] = ym.split('-').map(Number);
   const d = new Date(y, (m - 1) + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Calcula a prévia das parcelas que SERÃO criadas pra um grupo (sem inserir).
+ *  Usada pra mostrar pro user antes de confirmar. */
+function previsao(g: GrupoIncompleto): { parcelaIdx: number; mesComp: string | null }[] {
+  const startCompYM = g.ultimoMesCompetencia ? incrementYM(g.ultimoMesCompetencia, 1) : null;
+  const out = [];
+  for (let i = 0; i < g.faltam; i++) {
+    out.push({
+      parcelaIdx: g.maxParcelaAtual + 1 + i,
+      mesComp: startCompYM ? incrementYM(startCompYM, i) : null,
+    });
+  }
+  return out;
 }
