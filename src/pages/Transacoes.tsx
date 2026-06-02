@@ -52,6 +52,7 @@ export default function TransacoesPage() {
   // Período da query: 'mes' (default — só mês selecionado), '12m' (últimos 12 meses)
   // ou 'all' (histórico inteiro). Útil pra caçar parcelas específicas no histórico.
   const [periodo, setPeriodo] = useState<'mes' | '12m' | 'all'>('mes');
+  const [filterPago, setFilterPago] = useState<'all' | 'pago' | 'pendente'>('all');
   const [recatTransactions, setRecatTransactions] = useState<any[]>([]);
   const [recatCategoria, setRecatCategoria] = useState<{ nome: string; id: string | null; essencial: boolean }>({ nome: '', id: null, essencial: false });
   const [recatOpen, setRecatOpen] = useState(false);
@@ -169,6 +170,30 @@ export default function TransacoesPage() {
       return all.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
     },
     enabled: !!user,
+  });
+
+  // Alterna pago/pendente em 1 click direto na linha (sem abrir editor).
+  const togglePagoMutation = useMutation({
+    mutationFn: async (tx: { id: string; pago: boolean }) => {
+      const { error } = await supabase
+        .from('transacoes')
+        .update({ pago: !tx.pago })
+        .eq('id', tx.id);
+      if (error) throw error;
+      return !tx.pago;
+    },
+    onSuccess: (novoStatus) => {
+      queryClient.invalidateQueries({ queryKey: ['transacoes'] });
+      queryClient.invalidateQueries({ queryKey: ['saldos'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['fatura-acumulada'] });
+      toast({ title: novoStatus ? 'Marcada como paga' : 'Marcada como pendente' });
+    },
+    onError: (e: any) => toast({
+      title: 'Erro ao atualizar status',
+      description: e?.message?.slice(0, 200),
+      variant: 'destructive',
+    }),
   });
 
   const updateMutation = useMutation({
@@ -381,9 +406,11 @@ export default function TransacoesPage() {
     if (filterEssencial === 'false' && t.essencial) return false;
     if (filterConta !== 'all' && t.conta_id !== filterConta) return false;
     if (filterPessoa !== 'all' && t.pessoa !== filterPessoa) return false;
+    if (filterPago === 'pago' && t.pago === false) return false;
+    if (filterPago === 'pendente' && t.pago !== false) return false;
     if (search && !t.descricao.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }) || []), [transacoes, showIgnoradas, filterCategoria, filterTipo, filterEssencial, filterConta, filterPessoa, search]);
+  }) || []), [transacoes, showIgnoradas, filterCategoria, filterTipo, filterEssencial, filterConta, filterPessoa, filterPago, search]);
 
   // Group filtered transactions by day
   const groupedByDay = useMemo(() => {
@@ -506,24 +533,36 @@ export default function TransacoesPage() {
     const catName = t.categoria_id ? getDisplayName(t.categoria_id) : t.categoria;
     const contaNome = contas?.find(c => c.id === t.conta_id)?.nome;
     const txDate = new Date(t.data + 'T12:00:00');
+    const isPendente = t.pago === false;
 
     return (
       <div
         key={t.id}
-        className={`flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer ${t.ignorar_dashboard ? 'opacity-50' : ''}`}
+        className={`flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer ${t.ignorar_dashboard ? 'opacity-50' : ''} ${isPendente ? 'border-l-2 border-warning/60' : ''}`}
         onClick={() => { setEditingTx({ ...t, subcategoria: null }); setLearnPattern(false); }}
       >
-        <div
-          className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center"
-          style={{ backgroundColor: catColor + '20' }}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); togglePagoMutation.mutate({ id: t.id, pago: !isPendente }); }}
+          title={isPendente ? 'Marcar como pago' : 'Marcar como pendente'}
+          className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center hover:scale-105 transition-transform"
+          style={{ backgroundColor: catColor + (isPendente ? '10' : '20') }}
         >
-          <div className="w-4 h-4 rounded-full" style={{ backgroundColor: catColor }} />
-        </div>
+          <div
+            className={`w-4 h-4 rounded-full ${isPendente ? 'ring-2 ring-warning ring-offset-2 ring-offset-background' : ''}`}
+            style={{ backgroundColor: isPendente ? 'transparent' : catColor, border: isPendente ? `2px dashed ${catColor}` : 'none' }}
+          />
+        </button>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             {t.ignorar_dashboard && <EyeOff className="h-3 w-3 text-muted-foreground shrink-0" />}
-            <span className="text-sm font-medium truncate">{t.descricao}</span>
+            <span className={`text-sm font-medium truncate ${isPendente ? 'italic text-muted-foreground' : ''}`}>{t.descricao}</span>
+            {isPendente && (
+              <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-warning/40 text-warning shrink-0">
+                Pendente
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <span className="text-[10px] text-muted-foreground">
@@ -709,6 +748,14 @@ export default function TransacoesPage() {
                   <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="true">Essenciais</SelectItem>
                   <SelectItem value="false">Dispensáveis</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={filterPago} onValueChange={(v) => setFilterPago(v as typeof filterPago)}>
+                <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos status</SelectItem>
+                  <SelectItem value="pago">Pagos / Recebidos</SelectItem>
+                  <SelectItem value="pendente">Pendentes</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={filterConta} onValueChange={setFilterConta}>

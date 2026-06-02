@@ -66,16 +66,18 @@ export default function ContasPage() {
   const { data: saldos } = useQuery({
     queryKey: ['saldos', user?.id, todayIso],
     queryFn: async () => {
+      // Saldo REAL: só transações pago=true (modelo Mobills). Pendentes
+      // ficam como projeção, não afetam saldo atual da conta. Continuamos
+      // incluindo ignorar_dashboard (pagamento de fatura/transferência
+      // interna afeta saldo da conta mesmo sendo invisível no Dashboard).
       const data = await fetchAllRows<{ conta_id: string; tipo: string; valor: number }>(() => supabase
         .from('transacoes')
         .select('conta_id, tipo, valor')
         .eq('user_id', user!.id)
+        .eq('pago', true)
         .neq('categoria', 'Saldo Inicial')
         .lte('data', todayIso));
 
-      // Include ALL transactions up to today (even ignorar_dashboard) for accurate
-      // account balances — fatura payments affect card/bank balances. Future-dated
-      // entries (projected income, scheduled installments) are excluded.
       const saldoPorConta: Record<string, number> = {};
       data.forEach(t => {
         if (!saldoPorConta[t.conta_id]) saldoPorConta[t.conta_id] = 0;

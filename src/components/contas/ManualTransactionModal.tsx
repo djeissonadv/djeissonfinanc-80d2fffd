@@ -41,6 +41,9 @@ export function ManualTransactionModal({
   // saldo (que filtra <= hoje) até a data chegar.
   const [data, setData] = useState(toLocalIso(new Date()));
   const [essencial, setEssencial] = useState(false);
+  // pago = true por padrão se data ≤ hoje (lançamento de fato consumado),
+  // pago = false se data futura (projetada). User pode sobrescrever.
+  const [pago, setPago] = useState<boolean>(true);
   const [selectedContaId, setSelectedContaId] = useState<string>(contaId || '');
   const [recorrente, setRecorrente] = useState(false);
   const [meses, setMeses] = useState('12');
@@ -74,6 +77,13 @@ export function ManualTransactionModal({
   useEffect(() => {
     if (contaId) setSelectedContaId(contaId);
   }, [contaId]);
+
+  // Auto-detecta pago/pendente baseado na data: futuro = pendente, hoje/passado = pago.
+  // User pode sobrescrever depois manualmente.
+  useEffect(() => {
+    const hoje = toLocalIso(new Date());
+    setPago(data <= hoje);
+  }, [data]);
 
   // Fetch accounts list when needed (no contaId provided)
   const { data: contas } = useQuery({
@@ -173,6 +183,9 @@ export function ManualTransactionModal({
           mes_competencia: mesComp,
           grupo_parcela: grupoParc,
           ignorar_dashboard: ehTransferencia,
+          // Recorrentes/parceladas futuras nascem pendentes; a 1ª (i=0)
+          // segue o que user marcou (ehParcelado mantém pago só na atual).
+          pago: i === 0 ? pago : false,
           observacoes: recorrente
             ? `Recorrente ${i + 1}/${mesesNum}`
             : ehParcelado
@@ -245,6 +258,7 @@ export function ManualTransactionModal({
       setValor('');
       setTipo(defaultTipo || 'despesa');
       setEssencial(false);
+      setPago(true);
       setRecorrente(false);
       setMeses('12');
       setParcelado(false);
@@ -345,15 +359,27 @@ export function ManualTransactionModal({
             </div>
           )}
 
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="essencial"
-              checked={essencial}
-              onCheckedChange={(v) => setEssencial(!!v)}
-            />
-            <Label htmlFor="essencial" className="cursor-pointer text-sm font-normal">
-              Marcar como essencial
-            </Label>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="essencial"
+                checked={essencial}
+                onCheckedChange={(v) => setEssencial(!!v)}
+              />
+              <Label htmlFor="essencial" className="cursor-pointer text-sm font-normal">
+                Essencial
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="pago"
+                checked={pago}
+                onCheckedChange={(v) => setPago(!!v)}
+              />
+              <Label htmlFor="pago" className="cursor-pointer text-sm font-normal">
+                {tipo === 'receita' ? 'Já recebi' : 'Já paguei'}
+              </Label>
+            </div>
           </div>
 
           {/* Recorrente + Compra parcelada lado a lado quando AMBOS estão

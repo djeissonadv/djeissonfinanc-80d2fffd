@@ -140,7 +140,7 @@ export default function DashboardPage() {
         // Single query across all debit accounts (no N+1). Include ALL transactions
         // up to today for accurate balance (fatura payments are internal transfers
         // but still move the bank balance). Future-dated entries are excluded.
-        const txs = await fetchAllRows<{ valor: number; tipo: string }>(() => supabase.from('transacoes').select('valor, tipo').in('conta_id', debitIds).eq('user_id', user!.id).neq('categoria', 'Saldo Inicial').lte('data', todayIso));
+        const txs = await fetchAllRows<{ valor: number; tipo: string }>(() => supabase.from('transacoes').select('valor, tipo').in('conta_id', debitIds).eq('user_id', user!.id).eq('pago', true).neq('categoria', 'Saldo Inicial').lte('data', todayIso));
         for (const t of txs) {
           total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
         }
@@ -170,6 +170,7 @@ export default function DashboardPage() {
           .select('valor, tipo')
           .in('conta_id', debitIds)
           .eq('user_id', user!.id)
+          .eq('pago', true)
           .neq('categoria', 'Saldo Inicial')
           .lt('data', start));
         for (const t of txs) {
@@ -184,8 +185,12 @@ export default function DashboardPage() {
   const { receitaBase } = useFontesReceita();
   const reserva = config?.reserva_minima || 2000;
 
-  const totalDespesas = transacoesMes?.filter(t => t.tipo === 'despesa').reduce((s, t) => s + Number(t.valor), 0) || 0;
-  const totalReceitas = transacoesMes?.filter(t => t.tipo === 'receita').reduce((s, t) => s + Number(t.valor), 0) || 0;
+  // Realizado: só transações pago=true (saldo real do mês).
+  // Pendentes: pago=false (projeção). Mostradas separadamente em pill.
+  const totalDespesas = transacoesMes?.filter(t => t.tipo === 'despesa' && t.pago !== false).reduce((s, t) => s + Number(t.valor), 0) || 0;
+  const totalReceitas = transacoesMes?.filter(t => t.tipo === 'receita' && t.pago !== false).reduce((s, t) => s + Number(t.valor), 0) || 0;
+  const totalDespesasPendentes = transacoesMes?.filter(t => t.tipo === 'despesa' && t.pago === false).reduce((s, t) => s + Number(t.valor), 0) || 0;
+  const totalReceitasPendentes = transacoesMes?.filter(t => t.tipo === 'receita' && t.pago === false).reduce((s, t) => s + Number(t.valor), 0) || 0;
 
   // Comparativo com mês anterior — totais do mês passado pra mostrar
   // "↑ 12% vs mês passado" estilo Mobills.
@@ -382,13 +387,28 @@ export default function DashboardPage() {
                   </span>
                 )}
               </button>
+              {(totalDespesasPendentes > 0 || totalReceitasPendentes > 0) && (
+                <button
+                  onClick={() => navigate('/transacoes?status=pendente')}
+                  className="pill"
+                  title="Lançamentos com status pendente neste mês"
+                >
+                  <span className="h-2 w-2 rounded-full bg-warning" />
+                  <span className="text-xs text-muted-foreground">Pendentes</span>
+                  <span className="text-sm font-semibold tabular">
+                    {totalReceitasPendentes > 0 && `+${formatCurrency(totalReceitasPendentes)}`}
+                    {totalReceitasPendentes > 0 && totalDespesasPendentes > 0 && ' / '}
+                    {totalDespesasPendentes > 0 && `-${formatCurrency(totalDespesasPendentes)}`}
+                  </span>
+                </button>
+              )}
               {(totalAPagar > 0 || totalAReceber > 0) && (
                 <button
                   onClick={() => navigate('/a-pagar-receber')}
                   className="pill"
                 >
                   <span className="h-2 w-2 rounded-full bg-warning" />
-                  <span className="text-xs text-muted-foreground">Pendências</span>
+                  <span className="text-xs text-muted-foreground">A pagar/receber</span>
                   <span className="text-sm font-semibold tabular">{formatCurrency(totalAPagar + totalAReceber)}</span>
                 </button>
               )}

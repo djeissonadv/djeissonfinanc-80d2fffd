@@ -701,6 +701,10 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
           isSaldoAnteriorFatura(t.descricao) ||
           isTransferenciaInterna(t.descricao) ||
           isFaturaPayment(t.descricao),
+        // Linhas vindas de extrato bancário/cartão são SEMPRE pagas
+        // (já saíram/entraram efetivamente no banco). Projeções futuras
+        // de parcelas (gerado depois) sobrescrevem pra false.
+        pago: true,
         _isOriginal: true,
       });
     }
@@ -776,6 +780,9 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       // linhas que não definem o campo precisam de um default explícito — senão o
       // upsert em lote envia null e viola a constraint.
       ignorar_dashboard: t.ignorar_dashboard ?? false,
+      // Projeção de parcela futura = pendente. Linhas originais do extrato
+      // já mantêm o pago=true setado no push acima.
+      pago: t.pago ?? !("_isProjected" in t),
       _isOriginal: !("_isProjected" in t),
     }));
 

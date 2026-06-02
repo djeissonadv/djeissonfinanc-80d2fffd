@@ -551,6 +551,7 @@ export type Database = {
           ignorar_dashboard: boolean
           mes_competencia: string | null
           observacoes: string | null
+          pago: boolean
           parcela_atual: number | null
           parcela_total: number | null
           pessoa: string
@@ -579,6 +580,7 @@ export type Database = {
           ignorar_dashboard?: boolean
           mes_competencia?: string | null
           observacoes?: string | null
+          pago?: boolean
           parcela_atual?: number | null
           parcela_total?: number | null
           pessoa?: string
@@ -607,6 +609,7 @@ export type Database = {
           ignorar_dashboard?: boolean
           mes_competencia?: string | null
           observacoes?: string | null
+          pago?: boolean
           parcela_atual?: number | null
           parcela_total?: number | null
           pessoa?: string

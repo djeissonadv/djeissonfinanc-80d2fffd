@@ -107,6 +107,7 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
         pessoa: pessoaNome,
         mes_competencia: billingPeriod,
         ignorar_dashboard: true,
+        pago: true,
       });
       if (errCartao) throw errCartao;
 
@@ -127,6 +128,7 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
         pessoa: pessoaNome,
         mes_competencia: null,
         ignorar_dashboard: true,
+        pago: true,
       });
       if (errCC) throw errCC;
 

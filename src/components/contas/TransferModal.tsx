@@ -106,6 +106,7 @@ export function TransferModal({ open, onOpenChange, contaOrigemId: defaultOrigem
         hash_transacao: hashOut,
         pessoa: pessoaNome,
         ignorar_dashboard: true,
+        pago: true,
       });
       if (errOut) throw errOut;
 
@@ -124,6 +125,7 @@ export function TransferModal({ open, onOpenChange, contaOrigemId: defaultOrigem
         hash_transacao: hashIn,
         pessoa: pessoaNome,
         ignorar_dashboard: true,
+        pago: true,
       });
       if (errIn) {
         // Rollback da despesa pra não deixar a transferência meio criada
