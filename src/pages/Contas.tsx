@@ -25,6 +25,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { useFaturaAcumulada } from '@/hooks/useFaturaAcumulada';
 import { CardFatura } from '@/components/CardFatura';
+import { calcularSaldosContas } from '@/lib/saldo';
 import { format, parse } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -66,28 +67,17 @@ export default function ContasPage() {
   const { data: saldos } = useQuery({
     queryKey: ['saldos', user?.id, todayIso],
     queryFn: async () => {
-      // Filtro de pago é client-side pra ser resiliente: funciona se a coluna
-      // pago ainda não existe no banco (default true via migration) ou se
-      // existe. Server-side filter quebraria silenciosamente até migration
-      // rodar — saldo zera porque a query retorna vazio.
-      const data = await fetchAllRows<{ conta_id: string; tipo: string; valor: number; pago?: boolean }>(() => supabase
+      // Toda regra de saldo (filtro pago, ignora Saldo Inicial, soma com
+      // sinal) está em `lib/saldo.ts` — single source of truth pra evitar
+      // divergência com Dashboard/Análises.
+      const txs = await fetchAllRows<{ conta_id: string; tipo: string; valor: number; pago?: boolean; categoria?: string; ignorar_dashboard?: boolean }>(() => supabase
         .from('transacoes')
-        .select('conta_id, tipo, valor, pago')
+        .select('conta_id, tipo, valor, pago, categoria, ignorar_dashboard')
         .eq('user_id', user!.id)
-        .neq('categoria', 'Saldo Inicial')
         .lte('data', todayIso));
-
-      const saldoPorConta: Record<string, number> = {};
-      data.forEach(t => {
-        // pago === false = pendente, NÃO afeta saldo. Undefined ou true conta.
-        if (t.pago === false) return;
-        if (!saldoPorConta[t.conta_id]) saldoPorConta[t.conta_id] = 0;
-        if (t.tipo === 'receita') saldoPorConta[t.conta_id] += Number(t.valor);
-        else saldoPorConta[t.conta_id] -= Number(t.valor);
-      });
-      return saldoPorConta;
+      return calcularSaldosContas(contas || [], txs);
     },
-    enabled: !!user,
+    enabled: !!user && !!contas,
   });
 
   // Dados da fatura dos cartões — MESMA fonte do Dashboard (useFaturaAcumulada),

@@ -22,6 +22,8 @@ import { useFontesReceita } from '@/hooks/useFontesReceita';
 import { useFaturaAcumulada } from '@/hooks/useFaturaAcumulada';
 import { CardFatura } from '@/components/CardFatura';
 import { fetchAllRows } from '@/lib/supabase-fetch';
+import { calcularSaldoTotal } from '@/lib/saldo';
+import { eRealizada, ePendente } from '@/lib/transacao-filters';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -131,54 +133,49 @@ export default function DashboardPage() {
   const { data: saldoAtual } = useQuery({
     queryKey: ['dashboard', 'saldo-total', user?.id, todayIso],
     queryFn: async () => {
-      const { data: contasList } = await supabase.from('contas').select('id, saldo_inicial, tipo').eq('user_id', user!.id);
+      const { data: contasList } = await supabase.from('contas').select('id, saldo_inicial, tipo, data_abertura').eq('user_id', user!.id);
       if (!contasList?.length) return 0;
       const debitAccounts = contasList.filter(c => c.tipo === 'debito');
-      let total = debitAccounts.reduce((s, c) => s + (c.saldo_inicial || 0), 0);
       const debitIds = debitAccounts.map(c => c.id);
-      if (debitIds.length) {
-        // Filtro pago=false client-side: resiliente se a coluna ainda não
-        // existe no banco (migration pendente). Server-side eq('pago', true)
-        // retornaria 0 linhas e zeraria o saldo silenciosamente.
-        const txs = await fetchAllRows<{ valor: number; tipo: string; pago?: boolean }>(() => supabase.from('transacoes').select('valor, tipo, pago').in('conta_id', debitIds).eq('user_id', user!.id).neq('categoria', 'Saldo Inicial').lte('data', todayIso));
-        for (const t of txs) {
-          if (t.pago === false) continue; // pendente não conta
-          total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
-        }
-      }
-      return total;
+      if (!debitIds.length) return debitAccounts.reduce((s, c) => s + (c.saldo_inicial || 0), 0);
+      const txs = await fetchAllRows<{ conta_id: string; valor: number; tipo: string; pago?: boolean; categoria?: string; ignorar_dashboard?: boolean }>(() => supabase
+        .from('transacoes')
+        .select('conta_id, valor, tipo, pago, categoria, ignorar_dashboard')
+        .in('conta_id', debitIds)
+        .eq('user_id', user!.id)
+        .lte('data', todayIso));
+      return calcularSaldoTotal(debitAccounts, txs);
     },
     enabled: !!user,
   });
 
   // Saldo anterior = balance across debit accounts strictly BEFORE the current billing month's start.
-  // Uses the same all-transactions logic as saldoAtual (including ignorar_dashboard) to stay symmetric.
   const { data: saldoAnterior } = useQuery({
     queryKey: ['dashboard', 'saldo-anterior', user?.id, start],
     queryFn: async () => {
       const { data: contasList } = await supabase.from('contas').select('id, saldo_inicial, tipo, data_abertura').eq('user_id', user!.id);
       if (!contasList?.length) return 0;
       const debitAccounts = contasList.filter(c => c.tipo === 'debito');
-      // Only count opening balance if account was opened before the current month
-      let total = debitAccounts.reduce((s, c) => {
-        if (!c.data_abertura || c.data_abertura < start) return s + (c.saldo_inicial || 0);
-        return s;
-      }, 0);
       const debitIds = debitAccounts.map(c => c.id);
-      if (debitIds.length) {
-        const txs = await fetchAllRows<{ valor: number; tipo: string; pago?: boolean }>(() => supabase
-          .from('transacoes')
-          .select('valor, tipo, pago')
-          .in('conta_id', debitIds)
-          .eq('user_id', user!.id)
-          .neq('categoria', 'Saldo Inicial')
-          .lt('data', start));
-        for (const t of txs) {
-          if (t.pago === false) continue;
-          total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
-        }
+      if (!debitIds.length) {
+        return debitAccounts
+          .filter(c => !c.data_abertura || c.data_abertura < start)
+          .reduce((s, c) => s + (c.saldo_inicial || 0), 0);
       }
-      return total;
+      const txs = await fetchAllRows<{ conta_id: string; valor: number; tipo: string; pago?: boolean; categoria?: string; ignorar_dashboard?: boolean }>(() => supabase
+        .from('transacoes')
+        .select('conta_id, valor, tipo, pago, categoria, ignorar_dashboard')
+        .in('conta_id', debitIds)
+        .eq('user_id', user!.id)
+        .lt('data', start));
+      // Saldo inicial só conta se conta foi aberta estritamente antes do mês —
+      // pré-filtra zerando o saldo_inicial das contas abertas no mês corrente
+      // ou depois. Assim a função pode usar a regra simples (<=).
+      const contasAjustadas = debitAccounts.map(c => ({
+        ...c,
+        saldo_inicial: (!c.data_abertura || c.data_abertura < start) ? c.saldo_inicial : 0,
+      }));
+      return calcularSaldoTotal(contasAjustadas, txs);
     },
     enabled: !!user,
   });
@@ -186,12 +183,12 @@ export default function DashboardPage() {
   const { receitaBase } = useFontesReceita();
   const reserva = config?.reserva_minima || 2000;
 
-  // Realizado: só transações pago=true (saldo real do mês).
-  // Pendentes: pago=false (projeção). Mostradas separadamente em pill.
-  const totalDespesas = transacoesMes?.filter(t => t.tipo === 'despesa' && t.pago !== false).reduce((s, t) => s + Number(t.valor), 0) || 0;
-  const totalReceitas = transacoesMes?.filter(t => t.tipo === 'receita' && t.pago !== false).reduce((s, t) => s + Number(t.valor), 0) || 0;
-  const totalDespesasPendentes = transacoesMes?.filter(t => t.tipo === 'despesa' && t.pago === false).reduce((s, t) => s + Number(t.valor), 0) || 0;
-  const totalReceitasPendentes = transacoesMes?.filter(t => t.tipo === 'receita' && t.pago === false).reduce((s, t) => s + Number(t.valor), 0) || 0;
+  // Realizado vs pendente — usa predicates centrais (lib/transacao-filters)
+  // pra garantir mesmo critério em todo lugar.
+  const totalDespesas = transacoesMes?.filter(t => t.tipo === 'despesa' && eRealizada(t)).reduce((s, t) => s + Number(t.valor), 0) || 0;
+  const totalReceitas = transacoesMes?.filter(t => t.tipo === 'receita' && eRealizada(t)).reduce((s, t) => s + Number(t.valor), 0) || 0;
+  const totalDespesasPendentes = transacoesMes?.filter(t => t.tipo === 'despesa' && ePendente(t)).reduce((s, t) => s + Number(t.valor), 0) || 0;
+  const totalReceitasPendentes = transacoesMes?.filter(t => t.tipo === 'receita' && ePendente(t)).reduce((s, t) => s + Number(t.valor), 0) || 0;
 
   // Comparativo com mês anterior — totais do mês passado pra mostrar
   // "↑ 12% vs mês passado" estilo Mobills.
