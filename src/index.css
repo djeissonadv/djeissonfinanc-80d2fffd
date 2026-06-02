@@ -14,129 +14,127 @@
 
 @layer base {
   :root {
-    /* ── LIGHT (estilo macOS Ventura/Sonoma) ─────────────────────
-       Background NÃO é branco puro: cinza com tinta azul,
-       igual ao Finder. */
-    --background: 220 25% 97%;
-    --foreground: 222 47% 11%;
+    /* ── LIGHT — cinza escuro graphite (vibe iOS 18 + macOS Sequoia)
+       Fundo não-branco: cinza profundo. Cards "liquid glass" flutuam
+       por cima com translucidez forte. */
+    --background: 220 12% 18%;
+    --foreground: 220 14% 96%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card: 220 14% 22%;
+    --card-foreground: 220 14% 96%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover: 220 14% 22%;
+    --popover-foreground: 220 14% 96%;
 
-    /* Apple System Blue — accent principal */
-    --primary: 211 100% 50%;
+    /* Apple System Blue */
+    --primary: 211 100% 56%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 16% 92%;
-    --secondary-foreground: 222 47% 11%;
+    --secondary: 220 14% 26%;
+    --secondary-foreground: 220 14% 96%;
 
-    --muted: 220 15% 94%;
-    --muted-foreground: 220 9% 46%;
+    --muted: 220 14% 24%;
+    --muted-foreground: 220 9% 68%;
 
-    --accent: 211 100% 50%;
+    --accent: 211 100% 56%;
     --accent-foreground: 0 0% 100%;
 
     /* Apple System Red */
-    --destructive: 0 79% 56%;
+    --destructive: 0 79% 60%;
     --destructive-foreground: 0 0% 100%;
 
     /* Apple System Green */
-    --success: 142 71% 45%;
+    --success: 142 71% 50%;
     --success-foreground: 0 0% 100%;
 
     /* Apple System Orange */
-    --warning: 28 100% 52%;
+    --warning: 28 100% 58%;
     --warning-foreground: 0 0% 100%;
 
-    --danger: 0 79% 56%;
+    --danger: 0 79% 60%;
     --danger-foreground: 0 0% 100%;
 
-    --border: 220 13% 88%;
-    --input: 220 13% 88%;
-    --ring: 211 100% 50%;
+    --border: 220 14% 30%;
+    --input: 220 14% 30%;
+    --ring: 211 100% 56%;
 
-    /* Cantos arredondados generosos — vibe iOS */
     --radius: 1rem;
 
-    /* Sidebar com material translúcido */
-    --sidebar-background: 220 25% 97%;
-    --sidebar-foreground: 222 47% 11%;
-    --sidebar-primary: 211 100% 50%;
+    --sidebar-background: 220 12% 14%;
+    --sidebar-foreground: 220 14% 96%;
+    --sidebar-primary: 211 100% 56%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 16% 92%;
-    --sidebar-accent-foreground: 222 47% 11%;
-    --sidebar-border: 220 13% 88%;
-    --sidebar-ring: 211 100% 50%;
+    --sidebar-accent: 220 14% 22%;
+    --sidebar-accent-foreground: 220 14% 96%;
+    --sidebar-border: 220 14% 22%;
+    --sidebar-ring: 211 100% 56%;
 
-    /* Glass material — overlay translúcido pra cards "vidro" */
-    --glass-bg: 0 0% 100% / 0.65;
-    --glass-border: 220 13% 88% / 0.6;
+    /* Liquid glass material — alta translucidez, com highlight no topo */
+    --glass-bg: 220 14% 30% / 0.45;
+    --glass-border: 220 14% 80% / 0.18;
+    --glass-highlight: 0 0% 100% / 0.12;
 
-    /* Mesh gradient stops pro background (light) */
-    --mesh-1: 211 100% 90%;
-    --mesh-2: 280 100% 92%;
-    --mesh-3: 142 71% 88%;
+    /* Mesh gradient stops sutis pro background graphite */
+    --mesh-1: 211 100% 45%;
+    --mesh-2: 280 60% 40%;
+    --mesh-3: 142 50% 35%;
   }
 
   .dark {
-    /* ── DARK (estilo macOS Sonoma dark) ─────────────────────────
-       Background NÃO é preto puro: tom azul-cinza profundo. */
-    --background: 222 18% 8%;
+    /* ── DARK — preto profundo (vibe Vision Pro / iOS 18 dark) */
+    --background: 0 0% 6%;
     --foreground: 220 14% 96%;
 
-    --card: 222 18% 11%;
+    --card: 0 0% 10%;
     --card-foreground: 220 14% 96%;
 
-    --popover: 222 18% 13%;
+    --popover: 0 0% 12%;
     --popover-foreground: 220 14% 96%;
 
-    /* Apple System Blue (dark) */
-    --primary: 211 100% 56%;
-    --primary-foreground: 222 18% 8%;
+    --primary: 211 100% 58%;
+    --primary-foreground: 0 0% 6%;
 
-    --secondary: 222 16% 17%;
+    --secondary: 0 0% 14%;
     --secondary-foreground: 220 14% 96%;
 
-    --muted: 222 16% 15%;
-    --muted-foreground: 220 9% 65%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 220 9% 68%;
 
-    --accent: 211 100% 56%;
-    --accent-foreground: 222 18% 8%;
+    --accent: 211 100% 58%;
+    --accent-foreground: 0 0% 6%;
 
-    --destructive: 0 70% 52%;
+    --destructive: 0 70% 56%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 71% 50%;
-    --success-foreground: 222 18% 8%;
+    --success: 142 71% 52%;
+    --success-foreground: 0 0% 6%;
 
-    --warning: 28 100% 58%;
-    --warning-foreground: 222 18% 8%;
+    --warning: 28 100% 60%;
+    --warning-foreground: 0 0% 6%;
 
-    --danger: 0 70% 52%;
+    --danger: 0 70% 56%;
     --danger-foreground: 0 0% 100%;
 
-    --border: 222 16% 20%;
-    --input: 222 16% 20%;
-    --ring: 211 100% 56%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 211 100% 58%;
 
-    --sidebar-background: 222 18% 9%;
+    --sidebar-background: 0 0% 4%;
     --sidebar-foreground: 220 14% 96%;
-    --sidebar-primary: 211 100% 56%;
-    --sidebar-primary-foreground: 222 18% 8%;
-    --sidebar-accent: 222 16% 14%;
+    --sidebar-primary: 211 100% 58%;
+    --sidebar-primary-foreground: 0 0% 6%;
+    --sidebar-accent: 0 0% 12%;
     --sidebar-accent-foreground: 220 14% 96%;
-    --sidebar-border: 222 16% 18%;
-    --sidebar-ring: 211 100% 56%;
+    --sidebar-border: 0 0% 14%;
+    --sidebar-ring: 211 100% 58%;
 
-    --glass-bg: 222 18% 11% / 0.6;
-    --glass-border: 222 16% 24% / 0.6;
+    --glass-bg: 0 0% 20% / 0.35;
+    --glass-border: 0 0% 100% / 0.12;
+    --glass-highlight: 0 0% 100% / 0.08;
 
-    --mesh-1: 211 100% 25%;
-    --mesh-2: 280 80% 25%;
-    --mesh-3: 142 50% 22%;
+    --mesh-1: 211 100% 35%;
+    --mesh-2: 280 70% 28%;
+    --mesh-3: 142 50% 25%;
   }
 }
 
@@ -184,21 +182,57 @@
 }
 
 @layer components {
-  /* ── Glass material ────────────────────────────────────────────
-     Card translúcido com backdrop blur — vibe Vibrancy do macOS.
-     Pra fundos onde o gradient mesh apareça por trás. */
-  .glass {
+  /* ── Liquid Glass material ────────────────────────────────────
+     Material translúcido estilo iOS 18 / macOS Sequoia:
+     - Backdrop blur forte + saturação 200% (vibrancy)
+     - Borda fina com gradiente sutil (mais clara no topo = highlight)
+     - Inset highlight branco fraco no topo interno (vidro espesso)
+     - Sombra externa suave embaixo (flutuação) */
+  .glass,
+  .liquid-glass {
+    position: relative;
     background-color: hsl(var(--glass-bg));
-    backdrop-filter: saturate(180%) blur(20px);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(200%) blur(30px);
+    -webkit-backdrop-filter: saturate(200%) blur(30px);
     border: 1px solid hsl(var(--glass-border));
+    box-shadow:
+      inset 0 1px 0 0 hsl(var(--glass-highlight)),
+      inset 0 0 0 1px hsl(0 0% 100% / 0.04),
+      0 1px 3px hsl(0 0% 0% / 0.12),
+      0 8px 24px hsl(0 0% 0% / 0.18);
   }
 
+  /* Variante mais opaca pra modais/popovers que precisam de mais contraste */
   .glass-strong {
+    position: relative;
     background-color: hsl(var(--card) / 0.85);
-    backdrop-filter: saturate(180%) blur(30px);
-    -webkit-backdrop-filter: saturate(180%) blur(30px);
-    border: 1px solid hsl(var(--border) / 0.5);
+    backdrop-filter: saturate(200%) blur(40px);
+    -webkit-backdrop-filter: saturate(200%) blur(40px);
+    border: 1px solid hsl(var(--border) / 0.6);
+    box-shadow:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.06),
+      0 12px 48px hsl(0 0% 0% / 0.4);
+  }
+
+  /* Pseudo-elemento com highlight curvo no topo — simula reflexão
+     da borda superior do vidro espesso. Use junto com .liquid-glass
+     adicionando .liquid-glass-shine */
+  .liquid-glass-shine::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      180deg,
+      hsl(0 0% 100% / 0.25) 0%,
+      hsl(0 0% 100% / 0) 30%,
+      hsl(0 0% 100% / 0) 100%
+    );
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
   }
 
   /* Botão de pressão estilo iOS — escala leve no active */
