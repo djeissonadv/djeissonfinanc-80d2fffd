@@ -2,7 +2,11 @@
   display: none !important;
 }
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+/* ────────────────────────────────────────────────────────────────
+   Tipografia: SF Pro Display (nativa macOS/iOS), Inter fallback.
+   Usuário em macOS/iOS vê SF Pro real; em Windows/Linux usa Inter.
+   ──────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -10,83 +14,129 @@
 
 @layer base {
   :root {
-    --background: 210 20% 98%;
-    --foreground: 220 20% 12%;
+    /* ── LIGHT (estilo macOS Ventura/Sonoma) ─────────────────────
+       Background NÃO é branco puro: cinza com tinta azul,
+       igual ao Finder. */
+    --background: 220 25% 97%;
+    --foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 20% 12%;
+    --card-foreground: 222 47% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 12%;
+    --popover-foreground: 222 47% 11%;
 
-    --primary: 220 13% 22%;
+    /* Apple System Blue — accent principal */
+    --primary: 211 100% 50%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 13% 91%;
-    --secondary-foreground: 220 20% 12%;
+    --secondary: 220 16% 92%;
+    --secondary-foreground: 222 47% 11%;
 
-    --muted: 220 14% 96%;
-    --muted-foreground: 215 14% 40%;
+    --muted: 220 15% 94%;
+    --muted-foreground: 220 9% 46%;
 
-    --accent: 220 14% 96%;
-    --accent-foreground: 220 20% 12%;
+    --accent: 211 100% 50%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84% 60%;
+    /* Apple System Red */
+    --destructive: 0 79% 56%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 160 84% 39%;
+    /* Apple System Green */
+    --success: 142 71% 45%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 38 92% 50%;
+    /* Apple System Orange */
+    --warning: 28 100% 52%;
     --warning-foreground: 0 0% 100%;
 
-    --danger: 0 84% 60%;
+    --danger: 0 79% 56%;
     --danger-foreground: 0 0% 100%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 220 13% 22%;
+    --border: 220 13% 88%;
+    --input: 220 13% 88%;
+    --ring: 211 100% 50%;
 
-    --radius: 0.5rem;
+    /* Cantos arredondados generosos — vibe iOS */
+    --radius: 1rem;
 
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 13% 22%;
-    --sidebar-primary: 220 13% 22%;
+    /* Sidebar com material translúcido */
+    --sidebar-background: 220 25% 97%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 211 100% 50%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 14% 96%;
-    --sidebar-accent-foreground: 220 20% 12%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 220 13% 22%;
+    --sidebar-accent: 220 16% 92%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 220 13% 88%;
+    --sidebar-ring: 211 100% 50%;
+
+    /* Glass material — overlay translúcido pra cards "vidro" */
+    --glass-bg: 0 0% 100% / 0.65;
+    --glass-border: 220 13% 88% / 0.6;
+
+    /* Mesh gradient stops pro background (light) */
+    --mesh-1: 211 100% 90%;
+    --mesh-2: 280 100% 92%;
+    --mesh-3: 142 71% 88%;
   }
 
   .dark {
-    --background: 220 20% 7%;
-    --foreground: 220 14% 92%;
-    --card: 220 18% 10%;
-    --card-foreground: 220 14% 92%;
-    --popover: 220 18% 10%;
-    --popover-foreground: 220 14% 92%;
-    --primary: 220 14% 80%;
-    --primary-foreground: 220 20% 7%;
-    --secondary: 220 18% 16%;
-    --secondary-foreground: 220 14% 92%;
-    --muted: 220 18% 14%;
-    --muted-foreground: 215 14% 55%;
-    --accent: 220 18% 16%;
-    --accent-foreground: 220 14% 92%;
-    --destructive: 0 62% 30%;
-    --destructive-foreground: 220 14% 92%;
-    --border: 220 18% 18%;
-    --input: 220 18% 18%;
-    --ring: 220 14% 80%;
-    --sidebar-background: 220 18% 10%;
-    --sidebar-foreground: 220 14% 92%;
-    --sidebar-primary: 220 14% 80%;
-    --sidebar-primary-foreground: 220 20% 7%;
-    --sidebar-accent: 220 18% 14%;
-    --sidebar-accent-foreground: 220 14% 92%;
-    --sidebar-border: 220 18% 18%;
-    --sidebar-ring: 220 14% 80%;
+    /* ── DARK (estilo macOS Sonoma dark) ─────────────────────────
+       Background NÃO é preto puro: tom azul-cinza profundo. */
+    --background: 222 18% 8%;
+    --foreground: 220 14% 96%;
+
+    --card: 222 18% 11%;
+    --card-foreground: 220 14% 96%;
+
+    --popover: 222 18% 13%;
+    --popover-foreground: 220 14% 96%;
+
+    /* Apple System Blue (dark) */
+    --primary: 211 100% 56%;
+    --primary-foreground: 222 18% 8%;
+
+    --secondary: 222 16% 17%;
+    --secondary-foreground: 220 14% 96%;
+
+    --muted: 222 16% 15%;
+    --muted-foreground: 220 9% 65%;
+
+    --accent: 211 100% 56%;
+    --accent-foreground: 222 18% 8%;
+
+    --destructive: 0 70% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 50%;
+    --success-foreground: 222 18% 8%;
+
+    --warning: 28 100% 58%;
+    --warning-foreground: 222 18% 8%;
+
+    --danger: 0 70% 52%;
+    --danger-foreground: 0 0% 100%;
+
+    --border: 222 16% 20%;
+    --input: 222 16% 20%;
+    --ring: 211 100% 56%;
+
+    --sidebar-background: 222 18% 9%;
+    --sidebar-foreground: 220 14% 96%;
+    --sidebar-primary: 211 100% 56%;
+    --sidebar-primary-foreground: 222 18% 8%;
+    --sidebar-accent: 222 16% 14%;
+    --sidebar-accent-foreground: 220 14% 96%;
+    --sidebar-border: 222 16% 18%;
+    --sidebar-ring: 211 100% 56%;
+
+    --glass-bg: 222 18% 11% / 0.6;
+    --glass-border: 222 16% 24% / 0.6;
+
+    --mesh-1: 211 100% 25%;
+    --mesh-2: 280 80% 25%;
+    --mesh-3: 142 50% 22%;
   }
 }
 
@@ -95,13 +145,111 @@
     @apply border-border;
   }
 
+  html {
+    /* Suaviza zoom no iOS Safari */
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+      'Inter', system-ui, sans-serif;
+    @apply text-foreground antialiased;
+    /* Fundo com mesh gradient sutil — vibe wallpaper macOS Sonoma.
+       Fixed pra não rolar com o conteúdo. */
+    background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(at 0% 0%, hsl(var(--mesh-1) / 0.5) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, hsl(var(--mesh-2) / 0.35) 0px, transparent 50%),
+      radial-gradient(at 50% 100%, hsl(var(--mesh-3) / 0.3) 0px, transparent 50%);
+    background-attachment: fixed;
+    background-size: 100% 100%;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.01em;
+  }
+
+  /* Headers com letter-spacing apertado (estilo SF Pro Display) */
+  h1, h2, h3, h4 {
+    letter-spacing: -0.025em;
+    font-weight: 600;
+  }
+
+  /* TODOS os números com tabular nums — para de "dançar" ao filtrar */
+  .tabular,
+  [class*="font-bold"]:has(+ *),
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* ── Glass material ────────────────────────────────────────────
+     Card translúcido com backdrop blur — vibe Vibrancy do macOS.
+     Pra fundos onde o gradient mesh apareça por trás. */
+  .glass {
+    background-color: hsl(var(--glass-bg));
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border: 1px solid hsl(var(--glass-border));
+  }
+
+  .glass-strong {
+    background-color: hsl(var(--card) / 0.85);
+    backdrop-filter: saturate(180%) blur(30px);
+    -webkit-backdrop-filter: saturate(180%) blur(30px);
+    border: 1px solid hsl(var(--border) / 0.5);
+  }
+
+  /* Botão de pressão estilo iOS — escala leve no active */
+  .tap {
+    @apply transition-all duration-150 ease-out;
+  }
+  .tap:active {
+    transform: scale(0.97);
+  }
+
+  /* Sombra "elevation" Apple — múltiplas camadas suaves */
+  .shadow-apple {
+    box-shadow:
+      0 1px 2px hsl(220 13% 50% / 0.04),
+      0 2px 8px hsl(220 13% 50% / 0.06),
+      0 4px 16px hsl(220 13% 50% / 0.04);
+  }
+  .shadow-apple-lg {
+    box-shadow:
+      0 1px 3px hsl(220 13% 50% / 0.06),
+      0 4px 16px hsl(220 13% 50% / 0.08),
+      0 12px 40px hsl(220 13% 50% / 0.08);
+  }
+
+  /* Number display grande estilo Watch/Wallet */
+  .num-display {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "ss01", "cv11";
+    letter-spacing: -0.03em;
+    font-weight: 600;
   }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  /* Scrollbar discreta estilo macOS */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 9999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
   }
 }
