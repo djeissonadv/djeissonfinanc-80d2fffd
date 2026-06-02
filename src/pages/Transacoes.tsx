@@ -49,6 +49,9 @@ export default function TransacoesPage() {
   const [editContaReembolsoId, setEditContaReembolsoId] = useState('');
   const [showIgnoradas, setShowIgnoradas] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  // Período da query: 'mes' (default — só mês selecionado), '12m' (últimos 12 meses)
+  // ou 'all' (histórico inteiro). Útil pra caçar parcelas específicas no histórico.
+  const [periodo, setPeriodo] = useState<'mes' | '12m' | 'all'>('mes');
   const [recatTransactions, setRecatTransactions] = useState<any[]>([]);
   const [recatCategoria, setRecatCategoria] = useState<{ nome: string; id: string | null; essencial: boolean }>({ nome: '', id: null, essencial: false });
   const [recatOpen, setRecatOpen] = useState(false);
@@ -99,11 +102,51 @@ export default function TransacoesPage() {
   const billingMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
 
   const { data: transacoes } = useQuery({
-    queryKey: ['transacoes', user?.id, start, end, billingMonth],
+    queryKey: ['transacoes', user?.id, start, end, billingMonth, periodo],
     queryFn: async () => {
+      // Modo "all" (histórico inteiro): sem filtro de data/competência. Pesado
+      // mas necessário pra caçar transações específicas (parcela velha, etc).
+      if (periodo === 'all') {
+        return await fetchAllRows(() => supabase
+          .from('transacoes')
+          .select('*')
+          .eq('user_id', user!.id)
+          .order('data', { ascending: false }));
+      }
+
+      // Modo "12m": últimos 12 meses a partir de hoje. Cobre projeções futuras
+      // de parcelas + retroativo do ano inteiro sem trazer tudo.
+      if (periodo === '12m') {
+        const hoje = new Date();
+        const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 12, 1);
+        const fim = new Date(hoje.getFullYear(), hoje.getMonth() + 13, 0); // +12m projeção
+        const inicioStr = `${inicio.getFullYear()}-${String(inicio.getMonth() + 1).padStart(2, '0')}-01`;
+        const fimStr = `${fim.getFullYear()}-${String(fim.getMonth() + 1).padStart(2, '0')}-${String(fim.getDate()).padStart(2, '0')}`;
+        const inicioYM = inicioStr.slice(0, 7);
+        const fimYM = fimStr.slice(0, 7);
+        const byCompetencia = await fetchAllRows(() => supabase
+          .from('transacoes')
+          .select('*')
+          .eq('user_id', user!.id)
+          .gte('mes_competencia', inicioYM)
+          .lte('mes_competencia', fimYM)
+          .order('data', { ascending: false }));
+        const byDate = await fetchAllRows(() => supabase
+          .from('transacoes')
+          .select('*')
+          .eq('user_id', user!.id)
+          .is('mes_competencia', null)
+          .gte('data', inicioStr)
+          .lte('data', fimStr)
+          .order('data', { ascending: false }));
+        const all = [...byCompetencia, ...byDate];
+        const seen = new Set<string>();
+        return all.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
+      }
+
+      // Modo "mes" (default): só o mês selecionado.
       // Credit card transactions are identified by mes_competencia (billing period).
       // Debit/cash transactions have mes_competencia = null and are filtered by data.
-      // This mirrors the Dashboard logic so category totals are consistent.
       const byCompetencia = await fetchAllRows(() => supabase
         .from('transacoes')
         .select('*')
@@ -534,7 +577,19 @@ export default function TransacoesPage() {
           <Button variant="outline" size="sm" onClick={() => exportCSV({ transactions: filtered, contas: contas || [], month, year })}>
             <Download className="h-4 w-4 mr-1" />CSV
           </Button>
-          <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
+          <Select value={periodo} onValueChange={(v) => setPeriodo(v as typeof periodo)}>
+            <SelectTrigger className="w-[180px] h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="mes">Mês selecionado</SelectItem>
+              <SelectItem value="12m">Últimos 12 meses</SelectItem>
+              <SelectItem value="all">Histórico completo</SelectItem>
+            </SelectContent>
+          </Select>
+          {periodo === 'mes' && (
+            <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
+          )}
         </div>
       </div>
 
