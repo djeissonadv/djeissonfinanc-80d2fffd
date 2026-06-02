@@ -186,6 +186,16 @@ export function DiagnosticoParcelamentos({ open, onOpenChange }: Props) {
       // parcela) iguais. Suffix random previne o "duplicate key violates
       // idx_transacoes_hash".
       const runId = crypto.randomUUID().slice(0, 8);
+      // descricao_normalizada DEVE ser estável entre todas as parcelas do
+      // grupo — base sem o "(N/M)". Senão, agrupador vê duas séries
+      // diferentes ("MERCADOLIVRE 2PRODU" + "MERCADOLIVRE 2PRODU 212") e
+      // o grupo nunca completa.
+      const descNormBase = g.descricaoBase
+        .toUpperCase()
+        .replace(/[^A-Z0-9 ]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .substring(0, 50);
       for (let i = 0; i < g.faltam; i++) {
         const parcelaIdx = g.maxParcelaAtual + 1 + i;
         const mesComp = startCompYM ? incrementYM(startCompYM, i) : null;
@@ -197,7 +207,7 @@ export function DiagnosticoParcelamentos({ open, onOpenChange }: Props) {
           data: baseDate,
           data_original: baseDate,
           descricao,
-          descricao_normalizada: descricao.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim().substring(0, 50),
+          descricao_normalizada: descNormBase,
           valor: Number(g.valorMedio.toFixed(2)),
           tipo: g.tipo,
           categoria: g.categoria || 'Outros',
@@ -222,10 +232,14 @@ export function DiagnosticoParcelamentos({ open, onOpenChange }: Props) {
         title: `${count} parcela${count === 1 ? '' : 's'} criada${count === 1 ? '' : 's'}`,
         description: `${g.descricaoBase} agora vai até ${g.parcelaTotal}/${g.parcelaTotal}`,
       });
-      queryClient.invalidateQueries({ queryKey: ['diagnostico-parcelas'] });
+      // refetchQueries força refresh imediato; invalidate só marca stale e
+      // espera próximo trigger — modal aberto não dispara sozinho.
+      queryClient.refetchQueries({ queryKey: ['diagnostico-parcelas'] });
       queryClient.invalidateQueries({ queryKey: ['transacoes'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['fatura-acumulada'] });
+      // Fecha a prévia se estava aberta
+      setExpandidos(prev => { const n = new Set(prev); n.delete(g.key); return n; });
     },
     onError: (e: any) => {
       toast({ title: 'Erro ao preencher', description: String(e?.message || e).slice(0, 200), variant: 'destructive' });
