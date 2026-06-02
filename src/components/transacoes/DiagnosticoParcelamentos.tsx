@@ -112,7 +112,12 @@ export function DiagnosticoParcelamentos({ open, onOpenChange }: Props) {
         .trim()
         .toUpperCase()
         .substring(0, 30);
-      const key = t.grupo_parcela || `${desc}|${t.parcela_total}|${t.conta_id}`;
+      // Sem grupo_parcela, inclui valor arredondado pra separar compras
+      // distintas com mesma descrição base no mesmo cartão (ex: 2 compras
+      // diferentes no Mercado Livre 12x). Senão, viravam um bucket só com
+      // soma errada e violação de hash ao preencher.
+      const valorArr = Math.round(Number(t.valor) * 100);
+      const key = t.grupo_parcela || `${desc}|${t.parcela_total}|${t.conta_id}|${valorArr}`;
       if (!buckets.has(key)) buckets.set(key, []);
       buckets.get(key)!.push(t);
     }
@@ -166,11 +171,16 @@ export function DiagnosticoParcelamentos({ open, onOpenChange }: Props) {
       const startCompYM = g.ultimoMesCompetencia
         ? incrementYM(g.ultimoMesCompetencia, 1)
         : null;
+      // UUID curto por execução pra garantir hash único — generateHash sozinho
+      // colide com transações existentes que tinham (data,desc,valor,pessoa,
+      // parcela) iguais. Suffix random previne o "duplicate key violates
+      // idx_transacoes_hash".
+      const runId = crypto.randomUUID().slice(0, 8);
       for (let i = 0; i < g.faltam; i++) {
         const parcelaIdx = g.maxParcelaAtual + 1 + i;
         const mesComp = startCompYM ? incrementYM(startCompYM, i) : null;
         const descricao = `${g.descricaoBase} (${parcelaIdx}/${g.parcelaTotal})`;
-        const hash = generateHash(baseDate, g.descricaoBase, g.valorMedio, g.pessoa, parcelaIdx, g.parcelaTotal) + '_completed';
+        const hash = generateHash(baseDate, g.descricaoBase, g.valorMedio, g.pessoa, parcelaIdx, g.parcelaTotal) + `_fill_${runId}_${parcelaIdx}`;
         rows.push({
           user_id: user.id,
           conta_id: g.contaId,
