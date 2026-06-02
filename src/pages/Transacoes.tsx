@@ -17,7 +17,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Pencil, Trash2, Search, Download, Copy, EyeOff, Filter, ChevronDown, ChevronUp, Layers, CreditCard, Tag, Calendar } from 'lucide-react';
+import { Pencil, Trash2, Search, Download, Copy, EyeOff, Filter, ChevronDown, ChevronUp, Layers, CreditCard, Tag, Calendar, Stethoscope } from 'lucide-react';
+import { DiagnosticoParcelamentos } from '@/components/transacoes/DiagnosticoParcelamentos';
 import { ConfirmDelete } from '@/components/ConfirmDelete';
 import { Checkbox } from '@/components/ui/checkbox';
 import { exportCSV, copyToClipboard } from '@/lib/export';
@@ -52,6 +53,7 @@ export default function TransacoesPage() {
   // Período da query: 'mes' (default — só mês selecionado), '12m' (últimos 12 meses)
   // ou 'all' (histórico inteiro). Útil pra caçar parcelas específicas no histórico.
   const [periodo, setPeriodo] = useState<'mes' | '12m' | 'all'>('mes');
+  const [diagnosticoOpen, setDiagnosticoOpen] = useState(false);
   const [recatTransactions, setRecatTransactions] = useState<any[]>([]);
   const [recatCategoria, setRecatCategoria] = useState<{ nome: string; id: string | null; essencial: boolean }>({ nome: '', id: null, essencial: false });
   const [recatOpen, setRecatOpen] = useState(false);
@@ -576,6 +578,9 @@ export default function TransacoesPage() {
           </Button>
           <Button variant="outline" size="sm" onClick={() => exportCSV({ transactions: filtered, contas: contas || [], month, year })}>
             <Download className="h-4 w-4 mr-1" />CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setDiagnosticoOpen(true)} title="Diagnostica parcelamentos incompletos e oferece preencher">
+            <Stethoscope className="h-4 w-4 mr-1" />Diagnóstico
           </Button>
           <Select value={periodo} onValueChange={(v) => setPeriodo(v as typeof periodo)}>
             <SelectTrigger className="w-[180px] h-9">
@@ -1175,6 +1180,8 @@ export default function TransacoesPage() {
         onConfirm={() => bulkRecategorizeMutation.mutate()}
         loading={bulkRecategorizeMutation.isPending}
       />
+
+      <DiagnosticoParcelamentos open={diagnosticoOpen} onOpenChange={setDiagnosticoOpen} />
     </div>
   );
 }
