@@ -27,6 +27,10 @@ export interface SacParams {
   irVendaEstimado: number; // ganho de capital — valor informado pelo usuário
   outrosCustosVenda: number; // corretagem, etc.
   fgtsDisponivel: number;
+  // Dívidas em aberto que você vai quitar com o líquido da venda
+  // (empréstimos, financiamentos do carro, parcelas pendentes…).
+  // Subtrai do líquido — se quitar tudo com a venda, sobra menos pra entrada.
+  dividasAbertasQuitar: number;
 }
 
 export interface SacRow {
@@ -197,7 +201,12 @@ export function calcViabilidade(p: SacParams): ViabilidadeResult {
   // precisa pôr dinheiro do bolso na transação. Floorar em 0 escondia esse
   // déficit e deixava capitalParaCompra/checkCapital otimistas demais.
   const liquidoVenda =
-    p.valorVendaImovel - p.saldoDevedorImovelVender - p.iptuAtrasado - p.irVendaEstimado - p.outrosCustosVenda;
+    p.valorVendaImovel
+    - p.saldoDevedorImovelVender
+    - p.iptuAtrasado
+    - p.irVendaEstimado
+    - p.outrosCustosVenda
+    - (p.dividasAbertasQuitar || 0);
   // Capital total disponível para a compra = líquido da venda + FGTS + outras reservas.
   const capitalParaCompra = liquidoVenda + p.fgtsDisponivel + p.capitalDisponivel;
 

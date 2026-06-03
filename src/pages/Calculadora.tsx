@@ -49,6 +49,7 @@ const DEFAULT_PARAMS: SacParams = {
   irVendaEstimado: 0,
   outrosCustosVenda: 0,
   fgtsDisponivel: 0,
+  dividasAbertasQuitar: 0,
 };
 
 interface SavedSimulation {
@@ -82,6 +83,7 @@ function paramsToRow(params: SacParams) {
     ir_venda_estimado: params.irVendaEstimado,
     outros_custos_venda: params.outrosCustosVenda,
     fgts_disponivel: params.fgtsDisponivel,
+    dividas_abertas_quitar: params.dividasAbertasQuitar,
   };
 }
 
@@ -109,6 +111,7 @@ function rowToParams(row: any): SacParams {
     irVendaEstimado: Number(row.ir_venda_estimado ?? 0),
     outrosCustosVenda: Number(row.outros_custos_venda ?? 0),
     fgtsDisponivel: Number(row.fgts_disponivel ?? 0),
+    dividasAbertasQuitar: Number(row.dividas_abertas_quitar ?? 0),
   };
 }
 
