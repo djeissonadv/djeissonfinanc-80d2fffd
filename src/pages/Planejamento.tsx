@@ -2,12 +2,14 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useTransacoesMes, useTransacoesPeriodo } from '@/hooks/useTransacoesMes';
+import { calcularSaldoTotal } from '@/lib/saldo';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { MonthSelector } from '@/components/MonthSelector';
-import { formatCurrency, getMonthName, toLocalIso, getMonthRange } from '@/lib/format';
+import { formatCurrency, getMonthName, toLocalIso } from '@/lib/format';
 import { fetchAllRows } from '@/lib/supabase-fetch';
 import { ConfirmDelete } from '@/components/ConfirmDelete';
 import { BudgetReviewCard } from '@/components/planejamento/BudgetReviewCard';
@@ -48,8 +50,6 @@ export default function PlanejamentoPage() {
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
   const billingMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
-  const startDate = `${billingMonth}-01`;
-  const endDate = getMonthRange(month, year).end;
   const isFutureMonth = billingMonth > todayStr.slice(0, 7);
 
   const [editingMetas, setEditingMetas] = useState<Record<string, string>>({});
@@ -57,49 +57,29 @@ export default function PlanejamentoPage() {
   const [newFontDesc, setNewFontDesc] = useState('');
   const [newFontValor, setNewFontValor] = useState('');
 
-  // ── 1. Saldo atual das contas (até hoje) ──────────────────────────────────
+  // ── 1. Saldo atual das contas (até hoje) — usa lib/saldo (SSOT). ──────────
   const { data: saldoAtual } = useQuery({
     queryKey: ['planejamento-saldo', user?.id, todayStr],
     queryFn: async () => {
       const { data: contas } = await supabase
-        .from('contas').select('id, saldo_inicial, tipo').eq('user_id', user!.id);
+        .from('contas').select('id, saldo_inicial, tipo, data_abertura').eq('user_id', user!.id);
       if (!contas?.length) return 0;
       const debito = contas.filter(c => c.tipo === 'debito');
-      let total = debito.reduce((s: number, c: any) => s + (c.saldo_inicial || 0), 0);
       const debitIds = debito.map((c: any) => c.id);
-      if (debitIds.length) {
-        // Uma query só para todas as contas de débito (sem N+1); só até hoje,
-        // ignora futuras; sem filtro ignorar_dashboard (pagamentos de fatura são saídas reais).
-        const txs = await fetchAllRows<{ valor: number; tipo: string }>(() => supabase
-          .from('transacoes').select('valor, tipo')
-          .in('conta_id', debitIds).eq('user_id', user!.id)
-          .neq('categoria', 'Saldo Inicial')
-          .lte('data', todayStr));
-        for (const t of txs) total += t.tipo === 'receita' ? Number(t.valor) : -Number(t.valor);
-      }
-      return total;
+      if (!debitIds.length) return debito.reduce((s: number, c: any) => s + (c.saldo_inicial || 0), 0);
+      const txs = await fetchAllRows<{ conta_id: string; valor: number; tipo: string; pago?: boolean; categoria?: string; ignorar_dashboard?: boolean }>(() => supabase
+        .from('transacoes').select('conta_id, valor, tipo, pago, categoria, ignorar_dashboard')
+        .in('conta_id', debitIds).eq('user_id', user!.id)
+        .lte('data', todayStr));
+      return calcularSaldoTotal(debito, txs);
     },
     enabled: !!user,
   });
 
-  // ── 2. Transações do mês selecionado (receitas + despesas reais) ──────────
-  const { data: txMes } = useQuery({
-    queryKey: ['planejamento-txmes', user?.id, billingMonth],
-    queryFn: async () => {
-      const [byComp, byDate] = await Promise.all([
-        fetchAllRows(() => supabase.from('transacoes').select('valor, tipo, categoria, descricao, data, essencial')
-          .eq('user_id', user!.id).eq('ignorar_dashboard', false)
-          .eq('mes_competencia', billingMonth)),
-        fetchAllRows(() => supabase.from('transacoes').select('valor, tipo, categoria, descricao, data, essencial')
-          .eq('user_id', user!.id).eq('ignorar_dashboard', false)
-          .is('mes_competencia', null)
-          .gte('data', startDate).lte('data', endDate)),
-      ]);
-      const all = [...byComp, ...byDate];
-      // deduplicate by id is not needed here since we're selecting different sets
-      return all;
-    },
-    enabled: !!user,
+  // ── 2. Transações do mês — usa useTransacoesMes (SSOT). ───────────────────
+  const { data: txMes } = useTransacoesMes(month, year, {
+    apenasVisivelDashboard: true,
+    cachePrefix: 'planejamento-mes',
   });
 
   // ── 3. Metas salvas ──────────────────────────────────────────────────────
@@ -150,23 +130,20 @@ export default function PlanejamentoPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['fontes-receita'] }),
   });
 
-  // ── 5. Médias do ano (para contexto de tendência) ─────────────────────────
-  const { data: txAno } = useQuery({
-    queryKey: ['planejamento-ano', user?.id, year],
-    queryFn: async () => {
-      const [byComp, byDate] = await Promise.all([
-        fetchAllRows(() => supabase.from('transacoes').select('categoria, valor, mes_competencia, data')
-          .eq('user_id', user!.id).eq('ignorar_dashboard', false).eq('tipo', 'despesa')
-          .gte('mes_competencia', `${year}-01`).lte('mes_competencia', `${year}-12`)),
-        fetchAllRows(() => supabase.from('transacoes').select('categoria, valor, mes_competencia, data')
-          .eq('user_id', user!.id).eq('ignorar_dashboard', false).eq('tipo', 'despesa')
-          .is('mes_competencia', null)
-          .gte('data', `${year}-01-01`).lte('data', `${year}-12-31`)),
-      ]);
-      return [...byComp, ...byDate];
-    },
-    enabled: !!user,
+  // ── 5. Médias do ano — usa useTransacoesPeriodo (SSOT). ───────────────────
+  const { data: txAnoRaw } = useTransacoesPeriodo({
+    inicioComp: `${year}-01`,
+    fimComp: `${year}-12`,
+    inicioData: `${year}-01-01`,
+    fimData: `${year}-12-31`,
+    apenasVisivelDashboard: true,
+    cachePrefix: 'planejamento-ano',
   });
+  // Filtra só despesas (o hook traz tudo — filtro fica client-side)
+  const txAno = useMemo(
+    () => (txAnoRaw || []).filter(t => t.tipo === 'despesa'),
+    [txAnoRaw]
+  );
 
   // ── computed ───────────────────────────────────────────────────────────────
 

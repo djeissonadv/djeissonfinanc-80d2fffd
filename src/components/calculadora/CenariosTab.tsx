@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/format';
 import { SacParams, calcTaxaMensal, calcParcelaSAC } from '@/lib/sac-utils';
+import { apareceNoDashboard } from '@/lib/transacao-filters';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -171,7 +172,7 @@ export function CenariosTab({ params }: Props) {
       // Fetch transactions with category names via join
       const { data: transactions, error: txError } = await supabase
         .from('transacoes')
-        .select('data, valor, tipo, ignorar_dashboard, categoria, categoria_id, categorias!transacoes_categoria_id_fkey(nome)')
+        .select('data, valor, tipo, ignorar_dashboard, pago, categoria, categoria_id, categorias!transacoes_categoria_id_fkey(nome)')
         .eq('user_id', user!.id)
         .order('data', { ascending: true });
 
@@ -202,7 +203,9 @@ export function CenariosTab({ params }: Props) {
       let skippedExcluded = 0;
 
       for (const t of transactions) {
-        if (t.ignorar_dashboard) { skippedIgnored++; continue; }
+        // apareceNoDashboard exclui ignorar_dashboard=true, categoria='Saldo Inicial'
+        // e pago=false. Centraliza o filtro pra acompanhar a regra geral.
+        if (!apareceNoDashboard(t as any)) { skippedIgnored++; continue; }
         // NOTE: valor is stored as absolute value in DB — use tipo to distinguish receita/despesa
         if (t.tipo === 'receita') { skippedReceita++; continue; }
 
@@ -285,7 +288,7 @@ export function CenariosTab({ params }: Props) {
         let totalReceita = 0;
         const receitaMonths = new Set<string>();
         for (const t of transactions) {
-          if (t.ignorar_dashboard) continue;
+          if (!apareceNoDashboard(t as any)) continue;
           if (t.tipo !== 'receita') continue;
           const catRow = t.categorias as any;
           const catName = catRow?.nome || t.categoria || '';
