@@ -192,7 +192,7 @@ export default function TransacoesPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (tx: { id: string; categoria: string; categoria_id: string | null; essencial: boolean; ignorar_dashboard: boolean }) => {
+    mutationFn: async (tx: { id: string; categoria: string; categoria_id: string | null; essencial: boolean; ignorar_dashboard: boolean; pago: boolean }) => {
       // Edição simples e direta — só atualiza esta transação. Sem auto-
       // aprendizado, sem "aprender padrão", sem bulk-recategorizar similares.
       // A complexidade anterior gerava bugs ("por que minha despesa virou
@@ -202,6 +202,7 @@ export default function TransacoesPage() {
         categoria_id: tx.categoria_id,
         essencial: tx.essencial,
         ignorar_dashboard: tx.ignorar_dashboard,
+        pago: tx.pago,
       }).eq('id', tx.id);
       if (upErr) throw upErr;
     },
@@ -970,6 +971,7 @@ export default function TransacoesPage() {
                 categoria_id: editingTx.categoria_id || null,
                 essencial: editingTx.essencial,
                 ignorar_dashboard: editingTx.ignorar_dashboard || false,
+                pago: editingTx.pago !== false, // default true se undefined
               });
               // Reembolso roda em paralelo — falha aqui não quebra o save da
               // categoria; o erro vira toast separado.
@@ -1016,6 +1018,24 @@ export default function TransacoesPage() {
               <div className="flex items-center justify-between">
                 <Label>Essencial</Label>
                 <Switch checked={editingTx.essencial} onCheckedChange={v => setEditingTx({ ...editingTx, essencial: v })} />
+              </div>
+              {/* Toggle pago/pendente (modelo Mobills). Antes só dava pra
+                  alternar pelo bullet da linha — agora também no editor. */}
+              <div className="flex items-center justify-between rounded-lg border p-3 min-w-0">
+                <div className="min-w-0 flex-1">
+                  <Label className="text-sm font-medium cursor-pointer">
+                    {editingTx.tipo === 'receita' ? 'Já recebi' : 'Já paguei'}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {(editingTx.pago !== false)
+                      ? 'Contabiliza no saldo da conta'
+                      : 'Pendente — aparece em Próximos Vencimentos'}
+                  </p>
+                </div>
+                <Switch
+                  checked={editingTx.pago !== false}
+                  onCheckedChange={v => setEditingTx({ ...editingTx, pago: v })}
+                />
               </div>
               <div className="flex items-start gap-3 rounded-lg border p-3 min-w-0">
                 <Checkbox
