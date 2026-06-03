@@ -130,7 +130,12 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
         ignorar_dashboard: true,
         pago: true,
       });
-      if (errCC) throw errCC;
+      if (errCC) {
+        // Rollback: tira a receita criada no passo 1 pra não deixar a fatura
+        // abatida no banco sem o débito real na CC. Mesma estrutura do TransferModal.
+        await supabase.from('transacoes').delete().eq('hash_transacao', hashCartao);
+        throw errCC;
+      }
 
       queryClient.invalidateQueries({ queryKey: ['transacoes'] });
       queryClient.invalidateQueries({ queryKey: ['saldos'] });

@@ -16,6 +16,7 @@ import { MonthSelector } from '@/components/MonthSelector';
 import { ParcelasTimeline } from '@/components/dashboard/ParcelasTimeline';
 import { FaturaDrawer } from '@/components/dashboard/FaturaDrawer';
 import { ProximosVencimentos } from '@/components/dashboard/ProximosVencimentos';
+import { DuplicatasAlert } from '@/components/dashboard/DuplicatasAlert';
 import { ManualTransactionModal } from '@/components/contas/ManualTransactionModal';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
@@ -25,8 +26,9 @@ import { CardFatura } from '@/components/CardFatura';
 import { fetchAllRows } from '@/lib/supabase-fetch';
 import { calcularSaldoTotal } from '@/lib/saldo';
 import { eRealizada, ePendente } from '@/lib/transacao-filters';
-import { useTransacoesMes } from '@/hooks/useTransacoesMes';
+import { useTransacoesMes, useTransacoesPeriodo } from '@/hooks/useTransacoesMes';
 import { useVencimentos } from '@/hooks/useVencimentos';
+import { buildVencimentosFatura } from '@/lib/vencimentos';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -77,33 +79,16 @@ export default function DashboardPage() {
 
   const { data: faturaAcumulada } = useFaturaAcumulada(cardIds, billingMonth);
 
-  // Parcelas do ano todo — query separada porque cobre 12 meses, não cabe no
-  // useTransacoesMes (que é por mês). Mas usa o mesmo padrão de competência+data.
-  const { data: parcelasAno } = useQuery({
-    queryKey: ['dashboard', 'parcelas-ano', user?.id, year],
-    queryFn: async () => {
-      const [withCompetencia, withoutCompetencia] = await Promise.all([
-        fetchAllRows(() => supabase
-          .from('transacoes')
-          .select('*')
-          .eq('user_id', user!.id)
-          .eq('ignorar_dashboard', false)
-          .not('parcela_total', 'is', null)
-          .gte('mes_competencia', `${year}-01`)
-          .lte('mes_competencia', `${year}-12`)),
-        fetchAllRows(() => supabase
-          .from('transacoes')
-          .select('*')
-          .eq('user_id', user!.id)
-          .eq('ignorar_dashboard', false)
-          .not('parcela_total', 'is', null)
-          .is('mes_competencia', null)
-          .gte('data', `${year}-01-01`)
-          .lte('data', `${year}-12-31`)),
-      ]);
-      return [...withCompetencia, ...withoutCompetencia];
-    },
-    enabled: !!user,
+  // Parcelas do ano todo — usa useTransacoesPeriodo (mesma SSOT do useTransacoesMes,
+  // só com range maior). Antes duplicava o padrão inline.
+  const { data: parcelasAno } = useTransacoesPeriodo({
+    inicioComp: `${year}-01`,
+    fimComp: `${year}-12`,
+    inicioData: `${year}-01-01`,
+    fimData: `${year}-12-31`,
+    apenasVisivelDashboard: true,
+    apenasParceladas: true,
+    cachePrefix: 'parcelas-ano',
   });
 
   // Current balance across accounts
@@ -152,14 +137,9 @@ export default function DashboardPage() {
         .in('conta_id', debitIds)
         .eq('user_id', user!.id)
         .lt('data', start));
-      // Saldo inicial só conta se conta foi aberta estritamente antes do mês —
-      // pré-filtra zerando o saldo_inicial das contas abertas no mês corrente
-      // ou depois. Assim a função pode usar a regra simples (<=).
-      const contasAjustadas = debitAccounts.map(c => ({
-        ...c,
-        saldo_inicial: (!c.data_abertura || c.data_abertura < start) ? c.saldo_inicial : 0,
-      }));
-      return calcularSaldoTotal(contasAjustadas, txs);
+      // Saldo inicial só conta se conta foi aberta ESTRITAMENTE antes do mês —
+      // usa cutoffExclusive=true em vez do hack contasAjustadas anterior.
+      return calcularSaldoTotal(debitAccounts, txs, { cutoffDate: start, cutoffExclusive: true });
     },
     enabled: !!user,
   });
@@ -254,10 +234,17 @@ export default function DashboardPage() {
   const totalAPagar = (contasPR || []).filter((c: any) => c.tipo === 'pagar').reduce((s: number, c: any) => s + Number(c.valor), 0);
   const totalAReceber = (contasPR || []).filter((c: any) => c.tipo === 'receber').reduce((s: number, c: any) => s + Number(c.valor), 0);
 
+  // Vencimentos de fatura: cartões com totalAPagar > 0 e dia_vencimento
+  // dentro da janela de 30d. Calculado aqui pra reusar contas + faturaAcumulada
+  // que já estão em cache (React Query dedup).
+  const vencimentosFatura = useMemo(
+    () => buildVencimentosFatura(creditCards, faturaAcumulada || {}, todayIso, 30),
+    [creditCards, faturaAcumulada, todayIso]
+  );
   // Vencimentos dos próximos 30 dias — usado pra calcular "Disponível pra
-  // gastar hoje". Mesmo hook que alimenta o widget abaixo (React Query
-  // dedup garante 1 round-trip só, não 2).
-  const { impacto: impactoVenc } = useVencimentos(30);
+  // gastar hoje". Inclui faturas de cartão (Mobills-like): se Black vence em
+  // 8d com R$ 3k, o headline já subtrai isso.
+  const { impacto: impactoVenc } = useVencimentos(30, vencimentosFatura);
   // "Disponível pra gastar hoje" = saldo atual − despesas pendentes próximas
   // + receitas pendentes próximas. Quando saldoAtual é null (sem conta
   // débito) NÃO calcula — Hero mostra CTA em vez disso.
@@ -458,9 +445,15 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      {/* Alerta de duplicatas — só aparece se tiver. Substitui o que a página
+          Conciliação fazia (mas só pra dups; idempotência de pagamento e
+          transferência viraram modals dedicados). */}
+      <DuplicatasAlert />
+
       {/* Próximos vencimentos — widget que responde "o que sai/cai nos
-          próximos dias?". Inclui transações pendentes + contas_pagar_receber. */}
-      <ProximosVencimentos saldoAtual={saldoAtual ?? undefined} />
+          próximos dias?". Inclui transações pendentes + contas_pagar_receber
+          + faturas de cartão prestes a vencer. */}
+      <ProximosVencimentos saldoAtual={saldoAtual ?? undefined} vencimentosExtras={vencimentosFatura} />
 
       {/* Credit Card Invoices */}
       {creditCards.length > 0 && (

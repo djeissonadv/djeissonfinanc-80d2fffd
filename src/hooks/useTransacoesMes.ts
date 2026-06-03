@@ -112,3 +112,59 @@ export function useTransacoesMes(
     enabled: !!user,
   });
 }
+
+interface PeriodoOpts extends Options {
+  /** Range YYYY-MM da competência (inclusivo nos 2 lados) */
+  inicioComp: string;
+  /** YYYY-MM final da competência */
+  fimComp: string;
+  /** Range YYYY-MM-DD da data (pra txs sem mes_competencia) */
+  inicioData: string;
+  fimData: string;
+}
+
+/**
+ * Variante do useTransacoesMes pra ranges maiores que 1 mês (ex: ano todo
+ * pra Parcelas Timeline). Mesma regra de merge byCompetencia + byDate,
+ * mesma definição de "visível dashboard" / "parcelada".
+ *
+ * Existe pra parcelasAno do Dashboard não duplicar o padrão inline.
+ */
+export function useTransacoesPeriodo(opts: PeriodoOpts) {
+  const { user } = useAuth();
+  const prefix = opts.cachePrefix || 'transacoes-periodo';
+
+  return useQuery({
+    queryKey: [prefix, user?.id, opts.inicioComp, opts.fimComp, opts.inicioData, opts.fimData, opts.apenasVisivelDashboard ?? false, opts.apenasParceladas ?? false],
+    queryFn: async () => {
+      let qComp = supabase
+        .from('transacoes')
+        .select('*')
+        .eq('user_id', user!.id)
+        .gte('mes_competencia', opts.inicioComp)
+        .lte('mes_competencia', opts.fimComp);
+      if (opts.apenasVisivelDashboard) qComp = qComp.eq('ignorar_dashboard', false);
+      if (opts.apenasParceladas) qComp = qComp.not('parcela_total', 'is', null);
+
+      let qData = supabase
+        .from('transacoes')
+        .select('*')
+        .eq('user_id', user!.id)
+        .is('mes_competencia', null)
+        .gte('data', opts.inicioData)
+        .lte('data', opts.fimData);
+      if (opts.apenasVisivelDashboard) qData = qData.eq('ignorar_dashboard', false);
+      if (opts.apenasParceladas) qData = qData.not('parcela_total', 'is', null);
+
+      const [byCompetencia, byDate] = await Promise.all([
+        fetchAllRows<TransacaoRow>(() => qComp),
+        fetchAllRows<TransacaoRow>(() => qData),
+      ]);
+
+      const all = [...byCompetencia, ...byDate];
+      const seen = new Set<string>();
+      return all.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
+    },
+    enabled: !!user,
+  });
+}

@@ -11,13 +11,15 @@
 
 export interface Vencimento {
   id: string;
-  fonte: 'transacao' | 'conta_pr';
+  fonte: 'transacao' | 'conta_pr' | 'fatura';
   tipo: 'pagar' | 'receber';
   descricao: string;
   valor: number;
   dataVencimento: string; // YYYY-MM-DD
   categoria?: string | null;
   diasAteVencer: number; // negativo = atrasado
+  /** Pra fonte=fatura: id do cartão (pra abrir o drawer ao clicar) */
+  cardId?: string;
 }
 
 interface TxLike {
@@ -130,6 +132,72 @@ export function calcularImpactoVencimentos(
     totalAReceber,
     impactoLiquido: totalAReceber - totalAPagar,
   };
+}
+
+interface CartaoComFatura {
+  id: string;
+  nome: string;
+  dia_vencimento?: number | null;
+}
+
+interface FaturaInfo {
+  totalAPagar: number;
+}
+
+/**
+ * Calcula próximo vencimento de cartão a partir do dia do mês.
+ * Se dia_vencimento já passou este mês, vai pro mês seguinte.
+ *
+ * @returns ISO YYYY-MM-DD do próximo vencimento.
+ */
+export function proximoVencimentoCartao(diaVencimento: number, hoje: string): string {
+  const [y, m, d] = hoje.split('-').map(Number);
+  const targetDay = Math.min(Math.max(diaVencimento, 1), 28); // clamp pra evitar fev/31
+  // Se o dia ja passou neste mes, vai pro proximo
+  const useNextMonth = targetDay < d;
+  const dt = new Date(Date.UTC(y, m - 1 + (useNextMonth ? 1 : 0), targetDay));
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * Constrói vencimentos a partir das faturas em aberto dos cartões.
+ *
+ * Cada cartão com `totalAPagar > 0` e `dia_vencimento` setado vira um item
+ * de vencimento. Filtra pelo range `ateNDias`.
+ *
+ * Por que esta função existe:
+ *   Antes a Hero "Disponível pra gastar" ignorava a fatura do cartão — você
+ *   podia ter R$ 5k de saldo e uma fatura de R$ 3k vencendo em 8 dias e o
+ *   headline mostrava R$ 5k "disponível". Agora fatura próxima entra como
+ *   compromisso e o headline reflete o que sobra DEPOIS dela.
+ */
+export function buildVencimentosFatura(
+  cards: CartaoComFatura[],
+  faturas: Record<string, FaturaInfo>,
+  hoje: string,
+  ateNDias = 30
+): Vencimento[] {
+  const result: Vencimento[] = [];
+  for (const card of cards) {
+    if (!card.dia_vencimento) continue;
+    const fatura = faturas[card.id];
+    if (!fatura || fatura.totalAPagar <= 0.01) continue; // paga ou sem saldo
+    const dataVencimento = proximoVencimentoCartao(card.dia_vencimento, hoje);
+    const dias = diasAte(dataVencimento, hoje);
+    if (dias > ateNDias) continue;
+    result.push({
+      id: `fat:${card.id}`,
+      fonte: 'fatura',
+      tipo: 'pagar',
+      descricao: `Fatura ${card.nome}`,
+      valor: fatura.totalAPagar,
+      dataVencimento,
+      categoria: 'Pagamento Fatura',
+      diasAteVencer: dias,
+      cardId: card.id,
+    });
+  }
+  return result;
 }
 
 /**

@@ -4,13 +4,15 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { formatCurrency } from '@/lib/format';
-import { CalendarClock, ChevronRight, AlertCircle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
-import { labelVencimento } from '@/lib/vencimentos';
+import { CalendarClock, ChevronRight, AlertCircle, ArrowUpRight, ArrowDownRight, CreditCard } from 'lucide-react';
+import { labelVencimento, type Vencimento } from '@/lib/vencimentos';
 import { useVencimentos } from '@/hooks/useVencimentos';
 
 interface Props {
   /** Saldo realizado atual — usado pra mostrar "ficará em R$ X depois". Opcional. */
   saldoAtual?: number;
+  /** Vencimentos extras (ex: faturas de cartão) calculados pelo pai. */
+  vencimentosExtras?: Vencimento[];
 }
 
 /**
@@ -23,10 +25,10 @@ interface Props {
  *
  * Filtros: 7d / 30d (toggle). Mostra atrasados sempre.
  */
-export function ProximosVencimentos({ saldoAtual }: Props) {
+export function ProximosVencimentos({ saldoAtual, vencimentosExtras = [] }: Props) {
   const navigate = useNavigate();
   const [range, setRange] = useState<7 | 30>(30);
-  const { vencimentos, impacto } = useVencimentos(range);
+  const { vencimentos, impacto } = useVencimentos(range, vencimentosExtras);
   const atrasados = vencimentos.filter(v => v.diasAteVencer < 0);
   const saldoProjetado = saldoAtual != null ? saldoAtual + impacto.impactoLiquido : null;
 
@@ -123,11 +125,15 @@ export function ProximosVencimentos({ saldoAtual }: Props) {
               label.nivel === 'atrasado' ? 'text-destructive' :
               label.nivel === 'urgente' ? 'text-warning' :
               label.nivel === 'proximo' ? 'text-foreground' : 'text-muted-foreground';
-            const Icon = v.tipo === 'pagar' ? ArrowDownRight : ArrowUpRight;
+            const Icon = v.fonte === 'fatura'
+              ? CreditCard
+              : (v.tipo === 'pagar' ? ArrowDownRight : ArrowUpRight);
             const valorClass = v.tipo === 'pagar' ? 'text-destructive' : 'text-success';
 
             const onClick = () => {
-              if (v.fonte === 'conta_pr') {
+              if (v.fonte === 'fatura') {
+                navigate('/contas');
+              } else if (v.fonte === 'conta_pr') {
                 navigate('/a-pagar-receber');
               } else {
                 navigate(`/transacoes?status=pendente`);

@@ -13,12 +13,15 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTodayIso } from '@/hooks/useTodayIso';
 import { fetchAllRows } from '@/lib/supabase-fetch';
-import { construirVencimentos, calcularImpactoVencimentos } from '@/lib/vencimentos';
+import { construirVencimentos, calcularImpactoVencimentos, type Vencimento } from '@/lib/vencimentos';
 
 /**
  * @param ateNDias Janela em dias no futuro (default 30). Atrasados sempre entram.
+ * @param extras Vencimentos adicionais pré-calculados (ex: faturas de cartão).
+ *   O Dashboard usa isso pra injetar faturas próximas — ProximosVencimentos
+ *   também aceita o mesmo array via prop pra ficar consistente.
  */
-export function useVencimentos(ateNDias = 30) {
+export function useVencimentos(ateNDias = 30, extras: Vencimento[] = []) {
   const { user } = useAuth();
   const todayIso = useTodayIso();
 
@@ -63,10 +66,11 @@ export function useVencimentos(ateNDias = 30) {
     enabled: !!user,
   });
 
-  const vencimentos = useMemo(
-    () => construirVencimentos(txsPendentes || [], (cprPendentes || []) as any, todayIso, ateNDias),
-    [txsPendentes, cprPendentes, todayIso, ateNDias]
-  );
+  const vencimentos = useMemo(() => {
+    const base = construirVencimentos(txsPendentes || [], (cprPendentes || []) as any, todayIso, ateNDias);
+    // Mergeia extras (faturas de cartão) e re-ordena por dias até vencer.
+    return [...base, ...extras].sort((a, b) => a.diasAteVencer - b.diasAteVencer);
+  }, [txsPendentes, cprPendentes, todayIso, ateNDias, extras]);
 
   const impacto = useMemo(() => calcularImpactoVencimentos(vencimentos), [vencimentos]);
 
