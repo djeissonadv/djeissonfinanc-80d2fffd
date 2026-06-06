@@ -187,12 +187,14 @@ export default function DashboardPage() {
   const { data: planejamento } = useQuery({
     queryKey: ['dashboard', 'planejamento', user?.id, billingMonth],
     queryFn: async () => {
+      // Coluna real é `valor_planejado` (não `valor`). Antes usava `valor`
+      // e a query 400ava silenciosamente — o card de orçamento nunca aparecia.
       const { data } = await supabase
         .from('planejamento_categorias')
-        .select('categoria_nome, valor')
+        .select('categoria_nome, valor_planejado')
         .eq('user_id', user!.id)
         .eq('mes', billingMonth)
-        .gt('valor', 0);
+        .gt('valor_planejado', 0);
       return data || [];
     },
     enabled: !!user,
@@ -211,9 +213,9 @@ export default function DashboardPage() {
     return (planejamento || [])
       .map(p => ({
         categoria: p.categoria_nome,
-        meta: Number(p.valor),
+        meta: Number(p.valor_planejado),
         gasto: gastoPorCategoria[p.categoria_nome] || 0,
-        pct: ((gastoPorCategoria[p.categoria_nome] || 0) / Number(p.valor)) * 100,
+        pct: ((gastoPorCategoria[p.categoria_nome] || 0) / Number(p.valor_planejado)) * 100,
       }))
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 6);
