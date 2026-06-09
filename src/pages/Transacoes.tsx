@@ -39,6 +39,7 @@ export default function TransacoesPage() {
   const [filterPessoa, setFilterPessoa] = useState('all');
   const [search, setSearch] = useState('');
   const [editingTx, setEditingTx] = useState<any>(null);
+  const [parcelaDelOpen, setParcelaDelOpen] = useState(false);
   // Reembolso no editor — vincula uma RECEITA nova a esta DESPESA marcando que
   // outra pessoa vai pagar parte/total. Estado inicial sai da própria transação
   // (se já tem reembolso vinculado, o toggle vem ligado).
@@ -263,6 +264,37 @@ export default function TransacoesPage() {
       description: e?.message?.slice(0, 200),
       variant: 'destructive',
     }),
+  });
+
+  // Exclusão de parcelamento por ESCOPO:
+  //  - 'uma'        → só a parcela atual
+  //  - 'a-vencer'   → a atual + todas as parcelas seguintes (parcela_atual >=)
+  //  - 'todas'      → a série inteira (todo o grupo_parcela)
+  const deleteParcelasMutation = useMutation({
+    mutationFn: async ({ tx, escopo }: { tx: any; escopo: 'uma' | 'a-vencer' | 'todas' }) => {
+      if (escopo === 'uma' || !tx.grupo_parcela) {
+        const { error } = await supabase.from('transacoes').delete().eq('id', tx.id).eq('user_id', user!.id);
+        if (error) throw error;
+        return;
+      }
+      let q = supabase.from('transacoes').delete().eq('grupo_parcela', tx.grupo_parcela).eq('user_id', user!.id);
+      if (escopo === 'a-vencer') {
+        // Da parcela atual pra frente (mantém as já passadas/pagas)
+        q = q.gte('parcela_atual', tx.parcela_atual || 1);
+      }
+      const { error } = await q;
+      if (error) throw error;
+    },
+    onSuccess: (_d, { escopo }) => {
+      queryClient.invalidateQueries({ queryKey: ['transacoes'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['saldos'] });
+      queryClient.invalidateQueries({ queryKey: ['fatura-acumulada'] });
+      queryClient.invalidateQueries({ queryKey: ['contas'] });
+      toast({ title: escopo === 'uma' ? 'Parcela excluída' : escopo === 'a-vencer' ? 'Parcelas a vencer excluídas' : 'Parcelamento excluído' });
+      setEditingTx(null);
+    },
+    onError: (e: any) => toast({ title: 'Erro ao excluir', description: e?.message?.slice(0, 200), variant: 'destructive' }),
   });
 
   // Quando abrir o editor, sincroniza os estados de reembolso com a transação.
@@ -1156,34 +1188,88 @@ export default function TransacoesPage() {
                 >
                   {updateMutation.isPending ? 'Salvando…' : 'Salvar'}
                 </Button>
-                {/* Trocado window.confirm por ConfirmDelete (shadcn AlertDialog):
-                    consistente com o resto do app, dark mode OK, melhor em mobile.
-                    Se a despesa tem reembolso, o trigger do DB apaga a receita
-                    pareada automaticamente — aviso explícito pro user saber. */}
-                <ConfirmDelete
-                  onConfirm={() => {
-                    deleteMutation.mutate(editingTx.id);
-                    setEditingTx(null);
-                  }}
-                  title={`Excluir "${editingTx.descricao}"?`}
-                  description={
-                    editingTx.reembolso_transacao_id
-                      ? 'A receita de reembolso vinculada também será removida automaticamente.'
-                      : 'Esta transação será removida permanentemente.'
-                  }
-                  trigger={
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="icon"
-                      aria-label="Excluir transação"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  }
-                />
+                {/* Parcelado → abre escolha de escopo. Não-parcelado → confirm simples. */}
+                {editingTx.grupo_parcela && editingTx.parcela_total > 1 ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="icon"
+                    aria-label="Excluir parcelamento"
+                    onClick={() => setParcelaDelOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <ConfirmDelete
+                    onConfirm={() => {
+                      deleteMutation.mutate(editingTx.id);
+                      setEditingTx(null);
+                    }}
+                    title={`Excluir "${editingTx.descricao}"?`}
+                    description={
+                      editingTx.reembolso_transacao_id
+                        ? 'A receita de reembolso vinculada também será removida automaticamente.'
+                        : 'Esta transação será removida permanentemente.'
+                    }
+                    trigger={
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        aria-label="Excluir transação"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                )}
               </div>
             </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Escolha de escopo pra excluir parcelamento */}
+      <Dialog open={parcelaDelOpen} onOpenChange={setParcelaDelOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Excluir parcelamento</DialogTitle>
+          </DialogHeader>
+          {editingTx && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                "{editingTx.descricao}" — parcela {editingTx.parcela_atual}/{editingTx.parcela_total}. O que você quer excluir?
+              </p>
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => { deleteParcelasMutation.mutate({ tx: editingTx, escopo: 'uma' }); setParcelaDelOpen(false); }}
+                  disabled={deleteParcelasMutation.isPending}
+                >
+                  Só esta parcela ({editingTx.parcela_atual}/{editingTx.parcela_total})
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => { deleteParcelasMutation.mutate({ tx: editingTx, escopo: 'a-vencer' }); setParcelaDelOpen(false); }}
+                  disabled={deleteParcelasMutation.isPending}
+                >
+                  Esta e as próximas (a vencer)
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="w-full justify-start"
+                  onClick={() => { deleteParcelasMutation.mutate({ tx: editingTx, escopo: 'todas' }); setParcelaDelOpen(false); }}
+                  disabled={deleteParcelasMutation.isPending}
+                >
+                  Todas as {editingTx.parcela_total} parcelas (série inteira)
+                </Button>
+              </div>
+              <Button variant="ghost" className="w-full" onClick={() => setParcelaDelOpen(false)}>
+                Cancelar
+              </Button>
+            </div>
           )}
         </DialogContent>
       </Dialog>
