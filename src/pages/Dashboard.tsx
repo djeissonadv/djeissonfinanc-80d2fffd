@@ -420,6 +420,29 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
+      {/* Faturas dos cartões — logo abaixo do "Disponível pra gastar", porque
+          é o que mais pesa no dia a dia (resposta direta a "quanto devo nos
+          cartões?"). */}
+      {creditCards.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {creditCards.map(card => {
+            const fatura = faturaAcumulada?.[card.id] || { saldoAnterior: 0, despesasMes: 0, pagamentosMes: 0, totalAPagar: 0, valorFatura: 0 };
+            return (
+              <CardFatura
+                key={card.id}
+                cardId={card.id}
+                cardName={card.nome}
+                diaVencimento={card.dia_vencimento}
+                month={month}
+                fatura={fatura}
+                onCardClick={() => setFaturaDrawer({ open: true, cardId: card.id, cardName: card.nome })}
+                compact
+              />
+            );
+          })}
+        </div>
+      )}
+
       {/* Métricas secundárias em grid de 3 */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="cursor-pointer hover-lift group" onClick={() => navigate('/transacoes?tipo=despesa')}>
@@ -471,27 +494,6 @@ export default function DashboardPage() {
           próximos dias?". Inclui transações pendentes + contas_pagar_receber
           + faturas de cartão prestes a vencer. */}
       <ProximosVencimentos saldoAtual={saldoAtual ?? undefined} vencimentosExtras={vencimentosFatura} />
-
-      {/* Credit Card Invoices */}
-      {creditCards.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {creditCards.map(card => {
-            const fatura = faturaAcumulada?.[card.id] || { saldoAnterior: 0, despesasMes: 0, pagamentosMes: 0, totalAPagar: 0, valorFatura: 0 };
-            return (
-              <CardFatura
-                key={card.id}
-                cardId={card.id}
-                cardName={card.nome}
-                diaVencimento={card.dia_vencimento}
-                month={month}
-                fatura={fatura}
-                onCardClick={() => setFaturaDrawer({ open: true, cardId: card.id, cardName: card.nome })}
-                compact
-              />
-            );
-          })}
-        </div>
-      )}
 
       {/* Orçamento por categoria — progresso visual estilo Mobills.
           Top 6 categorias com meta planejada, ordenadas por % consumido. */}
