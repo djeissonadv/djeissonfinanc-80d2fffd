@@ -54,9 +54,13 @@ export default function TransacoesPage() {
   // ou 'all' (histórico inteiro). Útil pra caçar parcelas específicas no histórico.
   const [periodo, setPeriodo] = useState<'mes' | '12m' | 'all'>('mes');
   const [filterPago, setFilterPago] = useState<'all' | 'pago' | 'pendente'>('all');
-  const [groupBy, setGroupBy] = useState<'dia' | 'categoria' | 'parcelamento' | 'cartao' | 'valor'>('dia');
-  // Direção da ordenação por valor: 'desc' = maior→menor (default), 'asc' = menor→maior.
-  const [valorDir, setValorDir] = useState<'desc' | 'asc'>('desc');
+  const [groupBy, setGroupBy] = useState<'dia' | 'categoria' | 'parcelamento' | 'cartao'>('dia');
+  // ORDENAÇÃO — eixo INDEPENDENTE do agrupamento. Reordena as transações DENTRO
+  // de cada grupo. Ex: agrupar por Cartão + ordenar por Valor = cada cartão com
+  // seus lançamentos do maior pro menor. 'data' desc = mais recentes primeiro;
+  // 'valor' desc = maiores primeiro (por valor absoluto).
+  const [sortBy, setSortBy] = useState<'data' | 'valor'>('data');
+  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const toggleGroup = (key: string) => {
@@ -391,8 +395,13 @@ export default function TransacoesPage() {
       if (!groups[t.data]) groups[t.data] = [];
       groups[t.data].push(t);
     }
+    // Dentro de cada dia, ordena pelo eixo escolhido (data é redundante aqui,
+    // mas valor reordena os lançamentos do dia).
+    for (const k of Object.keys(groups)) groups[k] = sortTxs(groups[k]);
+    // Os dias em si: mais recente primeiro (data) ou pelo maior lançamento do
+    // dia quando ordenando por valor.
     return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
-  }, [filtered]);
+  }, [filtered, sortTxs]);
 
   // Group filtered transactions by category
   const groupedByCategoria = useMemo(() => {
@@ -405,8 +414,9 @@ export default function TransacoesPage() {
       groups[cat].count += 1;
       groups[cat].transactions.push(t);
     }
+    for (const g of Object.values(groups)) g.transactions = sortTxs(g.transactions);
     return Object.values(groups).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
-  }, [filtered]);
+  }, [filtered, sortTxs]);
 
   // Group filtered transactions by parcelamento (grupo_parcela)
   const groupedByParcelamento = useMemo(() => {
@@ -441,8 +451,8 @@ export default function TransacoesPage() {
     }
 
     const groupArray = Object.values(groups).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
-    return { groups: groupArray, standalone };
-  }, [filtered]);
+    return { groups: groupArray, standalone: sortTxs(standalone) };
+  }, [filtered, sortTxs]);
 
   // Group filtered transactions by account/card
   const groupedByCartao = useMemo(() => {
@@ -465,21 +475,27 @@ export default function TransacoesPage() {
       groups[key].count += 1;
       groups[key].transactions.push(t);
     }
-    // Sort each group's transactions by date desc
+    // Dentro de cada cartão/conta, ordena pelo eixo escolhido (data ou valor)
     for (const g of Object.values(groups)) {
-      g.transactions.sort((a, b) => b.data.localeCompare(a.data));
+      g.transactions = sortTxs(g.transactions);
     }
     return Object.values(groups).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
-  }, [filtered, contas]);
+  }, [filtered, contas, sortTxs]);
 
-  // Lista plana ordenada por valor (maior↔menor). Usa o valor absoluto, então
-  // a maior despesa e a maior receita disputam o topo pelo tamanho.
-  const sortedByValor = useMemo(() => {
-    return [...filtered].sort((a, b) => {
-      const diff = Math.abs(Number(b.valor)) - Math.abs(Number(a.valor));
-      return valorDir === 'desc' ? diff : -diff;
-    });
-  }, [filtered, valorDir]);
+  // Ordena uma lista de transações conforme o eixo escolhido (data ou valor).
+  // Aplicado DENTRO de cada grupo, então compõe com qualquer agrupamento.
+  const sortTxs = useMemo(() => (txs: typeof filtered) => {
+    const arr = [...txs];
+    if (sortBy === 'valor') {
+      arr.sort((a, b) => {
+        const diff = Math.abs(Number(b.valor)) - Math.abs(Number(a.valor));
+        return sortDir === 'desc' ? diff : -diff;
+      });
+    } else {
+      arr.sort((a, b) => sortDir === 'desc' ? b.data.localeCompare(a.data) : a.data.localeCompare(b.data));
+    }
+    return arr;
+  }, [sortBy, sortDir]);
 
   // Summary totals
   const totalReceitas = filtered.filter(t => t.tipo === 'receita').reduce((s, t) => s + Number(t.valor), 0);
@@ -696,18 +712,39 @@ export default function TransacoesPage() {
         >
           <CreditCard className="h-3 w-3" /> Cartão/Conta
         </Button>
+      </div>
+
+      {/* Ordenação — eixo independente do agrupamento. Reordena dentro dos grupos. */}
+      <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 pb-1">
+        <span className="text-xs text-muted-foreground shrink-0 mr-1">Ordenar:</span>
         <Button
           size="sm"
-          variant={groupBy === 'valor' ? 'default' : 'outline'}
+          variant={sortBy === 'data' ? 'default' : 'outline'}
           className="h-7 px-2 text-xs gap-1 shrink-0"
-          // Já ativo? inverte a direção. Senão, ativa em maior→menor.
+          // Já ativo? inverte. Senão, ativa em mais-recente-primeiro.
           onClick={() => {
-            if (groupBy === 'valor') setValorDir(d => (d === 'desc' ? 'asc' : 'desc'));
-            else { setGroupBy('valor'); setExpandedGroups(new Set()); }
+            if (sortBy === 'data') setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
+            else { setSortBy('data'); setSortDir('desc'); }
           }}
-          title={groupBy === 'valor' ? 'Toque pra inverter a ordem' : 'Ordenar por valor'}
+          title={sortBy === 'data' ? 'Toque pra inverter (recente ↔ antigo)' : 'Ordenar por data'}
         >
-          {groupBy === 'valor' && valorDir === 'asc'
+          {sortBy === 'data' && sortDir === 'asc'
+            ? <ArrowUpNarrowWide className="h-3 w-3" />
+            : <ArrowDownWideNarrow className="h-3 w-3" />}
+          Data
+        </Button>
+        <Button
+          size="sm"
+          variant={sortBy === 'valor' ? 'default' : 'outline'}
+          className="h-7 px-2 text-xs gap-1 shrink-0"
+          // Já ativo? inverte. Senão, ativa em maior-primeiro.
+          onClick={() => {
+            if (sortBy === 'valor') setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
+            else { setSortBy('valor'); setSortDir('desc'); }
+          }}
+          title={sortBy === 'valor' ? 'Toque pra inverter (maior ↔ menor)' : 'Ordenar por valor'}
+        >
+          {sortBy === 'valor' && sortDir === 'asc'
             ? <ArrowUpNarrowWide className="h-3 w-3" />
             : <ArrowDownWideNarrow className="h-3 w-3" />}
           Valor
@@ -1020,22 +1057,6 @@ export default function TransacoesPage() {
             </Card>
           );
         })}
-
-        {groupBy === 'valor' && filtered.length > 0 && (
-          <div>
-            <div className="flex items-center justify-between px-1 mb-2">
-              <span className="text-sm font-semibold">
-                Por valor · {valorDir === 'desc' ? 'maior → menor' : 'menor → maior'}
-              </span>
-              <span className="text-xs text-muted-foreground">{filtered.length} transações</span>
-            </div>
-            <Card>
-              <CardContent className="p-0 divide-y divide-border">
-                {sortedByValor.map(t => renderTransactionRow(t))}
-              </CardContent>
-            </Card>
-          </div>
-        )}
 
         {filtered.length === 0 && (
           <div className="text-center py-12">
