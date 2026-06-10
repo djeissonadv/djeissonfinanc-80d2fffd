@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useFaturaAcumulada } from '@/hooks/useFaturaAcumulada';
 import { fetchAllRows } from '@/lib/supabase-fetch';
 import { generateHash } from '@/lib/csv-parser';
 import { autoCategorizarTransacao } from '@/lib/auto-categorize';
@@ -179,6 +180,15 @@ export function QuickCardEntry({ open, onOpenChange }: Props) {
   const totalSessao = sessao.reduce((s, l) => s + l.valor, 0);
 
   const cardNome = cards?.find(c => c.id === cardId)?.nome || '';
+
+  // Total REAL da fatura: soma de TODOS os lançamentos do cartão nesta
+  // competência (importados + de outras sessões + os de agora), já com
+  // estornos abatidos. Invalidado a cada lançar/desfazer → atualiza ao vivo.
+  const { data: faturaMap, isLoading: faturaLoading } = useFaturaAcumulada(
+    open && cardId ? [cardId] : [],
+    mesCompetencia,
+  );
+  const totalFatura = faturaMap?.[cardId]?.despesasMes ?? 0;
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['transacoes'] });
@@ -466,13 +476,25 @@ export function QuickCardEntry({ open, onOpenChange }: Props) {
             </div>
           )}
 
-          {/* Rodapé com total da sessão */}
-          {sessao.length > 0 && (
-            <div className="flex items-center justify-between px-2.5 py-2 bg-secondary/40 text-sm border-t">
-              <span className="text-muted-foreground">
-                {sessao.length} {sessao.length === 1 ? 'lançamento' : 'lançamentos'} · {cardNome} {getMonthName(compMonth).slice(0, 3)}/{String(compYear).slice(2)}
-              </span>
-              <span className="font-semibold tabular text-destructive">{formatCurrency(totalSessao)}</span>
+          {/* Rodapé: total REAL da fatura (todos os lançamentos do mês, não só
+              os desta sessão). A linha menor mostra quanto você lançou agora. */}
+          {cardId && (
+            <div className="px-2.5 py-2 bg-secondary/40 border-t space-y-0.5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground flex items-center gap-1.5">
+                  <CreditCard className="h-3.5 w-3.5" />
+                  Fatura {cardNome} {getMonthName(compMonth).slice(0, 3)}/{String(compYear).slice(2)}
+                </span>
+                <span className="font-bold tabular text-destructive text-base">
+                  {faturaLoading ? '…' : formatCurrency(totalFatura)}
+                </span>
+              </div>
+              {sessao.length > 0 && (
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span>{sessao.length} {sessao.length === 1 ? 'lançado' : 'lançados'} agora</span>
+                  <span className="tabular">{formatCurrency(totalSessao)}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
