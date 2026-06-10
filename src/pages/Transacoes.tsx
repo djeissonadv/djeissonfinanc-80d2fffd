@@ -388,6 +388,22 @@ export default function TransacoesPage() {
     return true;
   }) || []), [transacoes, showIgnoradas, filterCategoria, filterSubcategoria, filterTipo, filterEssencial, filterConta, filterPessoa, filterPago, search]);
 
+  // Ordena uma lista de transações conforme o eixo escolhido (data ou valor).
+  // Aplicado DENTRO de cada grupo, então compõe com qualquer agrupamento.
+  // DECLARADO ANTES dos agrupamentos — eles o usam no corpo dos seus useMemo.
+  const sortTxs = useMemo(() => (txs: typeof filtered) => {
+    const arr = [...txs];
+    if (sortBy === 'valor') {
+      arr.sort((a, b) => {
+        const diff = Math.abs(Number(b.valor)) - Math.abs(Number(a.valor));
+        return sortDir === 'desc' ? diff : -diff;
+      });
+    } else {
+      arr.sort((a, b) => sortDir === 'desc' ? b.data.localeCompare(a.data) : a.data.localeCompare(b.data));
+    }
+    return arr;
+  }, [sortBy, sortDir]);
+
   // Group filtered transactions by day
   const groupedByDay = useMemo(() => {
     const groups: Record<string, typeof filtered> = {};
@@ -482,20 +498,6 @@ export default function TransacoesPage() {
     return Object.values(groups).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
   }, [filtered, contas, sortTxs]);
 
-  // Ordena uma lista de transações conforme o eixo escolhido (data ou valor).
-  // Aplicado DENTRO de cada grupo, então compõe com qualquer agrupamento.
-  const sortTxs = useMemo(() => (txs: typeof filtered) => {
-    const arr = [...txs];
-    if (sortBy === 'valor') {
-      arr.sort((a, b) => {
-        const diff = Math.abs(Number(b.valor)) - Math.abs(Number(a.valor));
-        return sortDir === 'desc' ? diff : -diff;
-      });
-    } else {
-      arr.sort((a, b) => sortDir === 'desc' ? b.data.localeCompare(a.data) : a.data.localeCompare(b.data));
-    }
-    return arr;
-  }, [sortBy, sortDir]);
 
   // Summary totals
   const totalReceitas = filtered.filter(t => t.tipo === 'receita').reduce((s, t) => s + Number(t.valor), 0);
