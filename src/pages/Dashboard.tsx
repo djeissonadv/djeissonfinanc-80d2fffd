@@ -17,6 +17,7 @@ import { ParcelasTimeline } from '@/components/dashboard/ParcelasTimeline';
 import { FaturaDrawer } from '@/components/dashboard/FaturaDrawer';
 import { ProximosVencimentos } from '@/components/dashboard/ProximosVencimentos';
 import { DuplicatasAlert } from '@/components/dashboard/DuplicatasAlert';
+import { QuickDateFixAlert } from '@/components/dashboard/QuickDateFixAlert';
 import { ManualTransactionModal } from '@/components/contas/ManualTransactionModal';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
@@ -489,6 +490,10 @@ export default function DashboardPage() {
           Conciliação fazia (mas só pra dups; idempotência de pagamento e
           transferência viraram modals dedicados). */}
       <DuplicatasAlert />
+
+      {/* Correção one-time: lançamentos rápidos antigos com data=hoje em vez do
+          mês da fatura. Some sozinho quando não há mais o que corrigir. */}
+      <QuickDateFixAlert />
 
       {/* Próximos vencimentos — widget que responde "o que sai/cai nos
           próximos dias?". Inclui transações pendentes + contas_pagar_receber

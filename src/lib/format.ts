@@ -43,3 +43,18 @@ export function getMonthName(monthIndex: number): string {
   const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
   return months[monthIndex];
 }
+
+/**
+ * Retorna uma data YYYY-MM-DD DENTRO do mês de competência (YYYY-MM),
+ * mantendo o dia informado, com clamp no último dia do mês (Fev → 28/29).
+ *
+ * Usado no lançamento de cartão: a competência define a fatura, mas a DATA
+ * precisa cair no mês certo (não em "hoje"), senão lançamentos de faturas
+ * passadas aparecem todos na data de hoje.
+ */
+export function dataNoMesCompetencia(competencia: string, dia: number): string {
+  const [y, m] = competencia.split('-').map(Number);
+  const lastDay = new Date(y, m, 0).getDate(); // dia 0 do mês seguinte = último do atual
+  const d = Math.min(Math.max(1, dia), lastDay);
+  return `${competencia}-${String(d).padStart(2, '0')}`;
+}

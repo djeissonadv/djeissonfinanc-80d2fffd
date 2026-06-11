@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toLocalIso, getMonthRange, formatDate, getMonthName } from '@/lib/format';
+import { toLocalIso, getMonthRange, formatDate, getMonthName, dataNoMesCompetencia } from '@/lib/format';
 
 describe('toLocalIso — usa componentes LOCAIS (sem shift de UTC)', () => {
   it('formata uma data local como YYYY-MM-DD pelos getters locais', () => {
@@ -41,5 +41,20 @@ describe('getMonthName', () => {
   it('mapeia índices 0..11 para abreviações pt-BR', () => {
     expect(getMonthName(0)).toBe('Jan');
     expect(getMonthName(11)).toBe('Dez');
+  });
+});
+
+describe('dataNoMesCompetencia — ancora a data no mês da fatura', () => {
+  it('mantém o dia dentro do mês', () => {
+    expect(dataNoMesCompetencia('2026-01', 10)).toBe('2026-01-10');
+  });
+  it('clampa no último dia do mês (fevereiro)', () => {
+    expect(dataNoMesCompetencia('2026-02', 30)).toBe('2026-02-28');
+  });
+  it('clampa fevereiro bissexto em 29', () => {
+    expect(dataNoMesCompetencia('2028-02', 31)).toBe('2028-02-29');
+  });
+  it('dia mínimo é 1', () => {
+    expect(dataNoMesCompetencia('2026-06', 0)).toBe('2026-06-01');
   });
 });

@@ -13,7 +13,7 @@ import { useFaturaAcumulada } from '@/hooks/useFaturaAcumulada';
 import { fetchAllRows } from '@/lib/supabase-fetch';
 import { generateHash } from '@/lib/csv-parser';
 import { autoCategorizarTransacao } from '@/lib/auto-categorize';
-import { toLocalIso, getMonthName, formatCurrency } from '@/lib/format';
+import { toLocalIso, getMonthName, formatCurrency, dataNoMesCompetencia } from '@/lib/format';
 import { CATEGORIAS_DESPESA, getSubcategorias } from '@/types/database.types';
 import { ChevronLeft, ChevronRight, Zap, Trash2, CreditCard } from 'lucide-react';
 
@@ -218,6 +218,7 @@ export function QuickCardEntry({ open, onOpenChange }: Props) {
       // pendentes. Parcelas ANTERIORES (1..pAtual-1) não são criadas — já
       // foram pagas antes e estão fora do controle atual.
       const hoje = toLocalIso(new Date());
+      const [hy, hm, hd] = hoje.split('-').map(Number); // dia de hoje (pra ancorar)
       const desc = descricao.trim();
       // Estorno é crédito único — nunca parcelado.
       const ehParcelado = pTotal > 1 && !estorno;
@@ -229,14 +230,23 @@ export function QuickCardEntry({ open, onOpenChange }: Props) {
       for (let i = 0; i < numLinhas; i++) {
         const parcelaIdx = ehParcelado ? pAtual + i : null;       // 5, 6, 7...
         const dt = new Date(cy, cm - 1 + i, 1);                   // competência avança
-        const compI = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+        const compY = dt.getFullYear();
+        const compM = dt.getMonth() + 1;                          // 1-12
+        const compI = `${compY}-${String(compM).padStart(2, '0')}`;
+        // DATA da compra: se a competência é o mês CORRENTE, usa hoje (data real).
+        // Senão (lançando fatura passada/futura), ancora no mês da fatura mantendo
+        // o dia de hoje, com clamp no último dia do mês. Antes gravava sempre HOJE,
+        // jogando lançamentos de faturas antigas todos pra data de hoje.
+        const dataRow = (compY === hy && compM === hm)
+          ? hoje
+          : dataNoMesCompetencia(compI, hd);
         const descFinal = ehParcelado ? `${desc} (${parcelaIdx}/${pTotal})` : desc;
         const seed = grupoParcela ? `${grupoParcela}_${parcelaIdx}` : crypto.randomUUID().slice(0, 8);
-        const hash = generateHash(hoje, descFinal, valorNum, pessoaNome) + '_quick_' + seed.slice(0, 12);
+        const hash = generateHash(dataRow, descFinal, valorNum, pessoaNome) + '_quick_' + seed.slice(0, 12);
         rows.push({
           user_id: user.id,
           conta_id: cardId,
-          data: hoje,
+          data: dataRow,
           descricao: descFinal,
           descricao_normalizada: descFinal.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim(),
           valor: valorNum,
