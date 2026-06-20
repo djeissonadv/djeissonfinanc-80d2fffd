@@ -825,6 +825,9 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
         codigo_cartao: null,
         valor_dolar: null,
         ignorar_dashboard: true,
+        // Pagamento de fatura já aconteceu (saiu do extrato) → pago. Sem isso
+        // o insert manda null e viola a constraint NOT NULL da coluna `pago`.
+        pago: true,
         _isOriginal: true,
       });
     }
@@ -1290,7 +1293,14 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       for (let i = 0; i < plan.newTransactions.length; i += batchSize) {
         const batch = plan.newTransactions
           .slice(i, i + batchSize)
-          .map(({ _isOriginal, _isProjected, ...rest }: any) => rest);
+          // Defaults defensivos: as colunas pago e ignorar_dashboard são NOT NULL.
+          // Qualquer linha que escape sem setá-las (ex: pagamentos empurrados
+          // depois do map principal) viraria null e derrubaria o lote inteiro.
+          .map(({ _isOriginal, _isProjected, ...rest }: any) => ({
+            ...rest,
+            pago: rest.pago ?? true,
+            ignorar_dashboard: rest.ignorar_dashboard ?? false,
+          }));
         const { error, data } = await supabase
           .from("transacoes")
           .upsert(batch, { onConflict: "user_id,hash_transacao" })
