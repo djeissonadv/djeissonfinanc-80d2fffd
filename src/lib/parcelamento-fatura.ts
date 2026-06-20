@@ -7,11 +7,14 @@ export interface ParcelaFaturaPlano {
 }
 
 export interface PlanoParcelamentoFatura {
-  principal: number;        // valor financiado (= fatura sendo parcelada)
+  principal: number;          // total da fatura sendo parcelada
+  entrada: number;            // valor pago à vista agora (0 = sem entrada)
+  financiado: number;         // principal − entrada (o que vai pras parcelas)
   numParcelas: number;
   valorParcela: number;
-  totalParcelado: number;   // numParcelas × valorParcela (> principal por causa do juro)
-  juros: number;            // totalParcelado − principal (custo do financiamento)
+  totalParcelado: number;     // numParcelas × valorParcela
+  totalDesembolsado: number;  // entrada + totalParcelado (o que sai do bolso no total)
+  juros: number;              // totalParcelado − financiado (custo do financiamento)
   parcelas: ParcelaFaturaPlano[];
 }
 
@@ -33,8 +36,12 @@ export function planoParcelamentoFatura(
   numParcelas: number,
   valorParcela: number,
   faturaTotal: number,
+  entrada = 0,
 ): PlanoParcelamentoFatura {
   const principal = Math.round(faturaTotal * 100) / 100;
+  // Entrada não passa do total da fatura (e nunca negativa).
+  const ent = Math.min(Math.max(0, Math.round(entrada * 100) / 100), principal);
+  const financiado = Math.round((principal - ent) * 100) / 100;
   const N = Math.max(1, Math.floor(numParcelas));
   const vp = Math.round(valorParcela * 100) / 100;
   const parcelas: ParcelaFaturaPlano[] = [];
@@ -42,6 +49,8 @@ export function planoParcelamentoFatura(
     parcelas.push({ idx: i, competencia: addMonthsYM(billingPeriod, i), valor: vp });
   }
   const totalParcelado = Math.round(vp * N * 100) / 100;
-  const juros = Math.round((totalParcelado - principal) * 100) / 100;
-  return { principal, numParcelas: N, valorParcela: vp, totalParcelado, juros, parcelas };
+  const totalDesembolsado = Math.round((ent + totalParcelado) * 100) / 100;
+  // Juro incide sobre o valor FINANCIADO (depois da entrada).
+  const juros = Math.round((totalParcelado - financiado) * 100) / 100;
+  return { principal, entrada: ent, financiado, numParcelas: N, valorParcela: vp, totalParcelado, totalDesembolsado, juros, parcelas };
 }

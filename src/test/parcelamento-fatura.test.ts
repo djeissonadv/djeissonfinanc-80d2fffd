@@ -44,4 +44,27 @@ describe('planoParcelamentoFatura', () => {
     expect(p.numParcelas).toBe(1);
     expect(p.parcelas).toHaveLength(1);
   });
+
+  it('entrada reduz o valor financiado; juro incide só sobre o financiado', () => {
+    // fatura 6000, entrada 1000 → financia 5000 em 10x de 530 = 5300
+    const p = planoParcelamentoFatura('2026-06', 10, 530, 6000, 1000);
+    expect(p.entrada).toBe(1000);
+    expect(p.financiado).toBe(5000);
+    expect(p.totalParcelado).toBe(5300);       // 10 × 530
+    expect(p.juros).toBe(300);                  // 5300 − 5000
+    expect(p.totalDesembolsado).toBe(6300);     // 1000 + 5300
+  });
+
+  it('entrada não passa do total da fatura', () => {
+    const p = planoParcelamentoFatura('2026-06', 1, 100, 500, 999);
+    expect(p.entrada).toBe(500);
+    expect(p.financiado).toBe(0);
+  });
+
+  it('sem entrada (default 0) mantém o comportamento antigo', () => {
+    const p = planoParcelamentoFatura('2026-06', 12, 530, 6000);
+    expect(p.entrada).toBe(0);
+    expect(p.financiado).toBe(6000);
+    expect(p.totalDesembolsado).toBe(6360);
+  });
 });
