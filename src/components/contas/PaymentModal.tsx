@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { MoneyInput } from '@/components/ui/money-input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { formatCurrency, getMonthName } from '@/lib/format';
+import { formatCurrency, getMonthName, addMonthsYM } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTodayIso } from '@/hooks/useTodayIso';
@@ -51,7 +51,7 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
   const [data, setData] = useState<string>(todayIso);
   const [submitting, setSubmitting] = useState(false);
   // Modo: pagar agora (à vista/parcial) ou parcelar a fatura inteira (financiar).
-  const [modo, setModo] = useState<'pagar' | 'parcelar'>('pagar');
+  const [modo, setModo] = useState<'pagar' | 'parcelar' | 'acumular'>('pagar');
   const [numParcelas, setNumParcelas] = useState<number>(12);
   const [valorParcela, setValorParcela] = useState<number>(0);
   const [entrada, setEntrada] = useState<number>(0);
@@ -283,6 +283,72 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
     setSubmitting(false);
   };
 
+  // ACUMULAR p/ a próxima fatura: a fatura atual fica QUITADA (abatida) e o valor
+  // vira um "A pagar" no mês seguinte. Sem juros (= parcelar em 1x). O principal
+  // já foi contado como gasto, então NÃO criamos despesa nova (contas_pagar_receber
+  // não entra em "Gastos do mês" nem no saldo).
+  const ymLabel = (ym: string) => {
+    const [y, m] = ym.split('-').map(Number);
+    return `${getMonthName(m - 1).toLowerCase()}/${String(y).slice(2)}`;
+  };
+  const proxComp = addMonthsYM(billingPeriod, 1);
+  const principalAcum = Math.round(faturaTotal * 100) / 100;
+
+  const handleAcumular = async () => {
+    if (!user || principalAcum <= 0) return;
+    setSubmitting(true);
+    try {
+      const runId = crypto.randomUUID().slice(0, 8);
+      const descAbate = `Fatura ${ymLabel(billingPeriod)} acumulada p/ próxima`;
+      const hashAbate = generateHash(todayIso, descAbate, principalAcum, pessoaNome) + '_acum_' + runId;
+      const { error: errAbate } = await supabase.from('transacoes').insert({
+        user_id: user.id,
+        conta_id: contaId,
+        data: todayIso,
+        descricao: descAbate,
+        descricao_normalizada: descAbate.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim(),
+        valor: principalAcum,
+        tipo: 'receita',
+        categoria: 'Pagamento Fatura',
+        essencial: true,
+        hash_transacao: hashAbate,
+        pessoa: pessoaNome,
+        mes_competencia: billingPeriod,
+        ignorar_dashboard: true,
+        pago: true,
+      });
+      if (errAbate) throw errAbate;
+
+      const { error: errPR } = await supabase.from('contas_pagar_receber').insert({
+        user_id: user.id,
+        tipo: 'pagar' as const,
+        descricao: `Fatura ${contaNome} ${ymLabel(billingPeriod)} (acumulada)`,
+        valor: principalAcum,
+        mes: proxComp,
+        data_vencimento: `${proxComp}-10`,
+        categoria: 'Pagamento Fatura',
+        pago: false,
+      });
+      if (errPR) {
+        await supabase.from('transacoes').delete().eq('hash_transacao', hashAbate);
+        throw errPR;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['transacoes'] });
+      queryClient.invalidateQueries({ queryKey: ['fatura-acumulada'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['contas-pagar-receber'] });
+      queryClient.invalidateQueries({ queryKey: ['vencimentos'] });
+
+      toast({ title: 'Fatura acumulada', description: `${formatCurrency(principalAcum)} jogado pra fatura de ${ymLabel(proxComp)}.` });
+      onOpenChange(false);
+    } catch (err: any) {
+      console.error(err);
+      toast({ title: 'Erro ao acumular fatura', description: String(err?.message || err).slice(0, 200), variant: 'destructive' });
+    }
+    setSubmitting(false);
+  };
+
   const valorNum = valor;
   const restante = Math.max(0, faturaTotal - valorNum);
 
@@ -292,27 +358,34 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
         <DialogHeader>
           <DialogTitle>Pagar fatura — {contaNome}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={(e) => { e.preventDefault(); modo === 'pagar' ? handleConfirm() : handleParcelar(); }} className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); modo === 'pagar' ? handleConfirm() : modo === 'parcelar' ? handleParcelar() : handleAcumular(); }} className="space-y-4">
           <div className="p-3 rounded-xl bg-muted text-center">
             <p className="text-sm text-muted-foreground">Total da fatura</p>
             <p className="text-2xl font-bold tabular text-destructive">{formatCurrency(faturaTotal)}</p>
           </div>
 
-          {/* Toggle: pagar agora vs parcelar (financiar a fatura inteira) */}
-          <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-muted">
+          {/* Toggle: pagar agora · parcelar (financiar) · acumular (rolar p/ próxima) */}
+          <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-muted">
             <button
               type="button"
               onClick={() => setModo('pagar')}
-              className={`h-8 rounded-md text-sm font-medium transition-colors ${modo === 'pagar' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`h-8 rounded-md text-xs font-medium transition-colors ${modo === 'pagar' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
             >
               Pagar agora
             </button>
             <button
               type="button"
               onClick={() => setModo('parcelar')}
-              className={`h-8 rounded-md text-sm font-medium transition-colors ${modo === 'parcelar' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`h-8 rounded-md text-xs font-medium transition-colors ${modo === 'parcelar' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
             >
               Parcelar
+            </button>
+            <button
+              type="button"
+              onClick={() => setModo('acumular')}
+              className={`h-8 rounded-md text-xs font-medium transition-colors ${modo === 'acumular' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Acumular
             </button>
           </div>
 
@@ -399,6 +472,31 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
                 disabled={submitting || plano.valorParcela <= 0 || plano.numParcelas < 1 || faturaTotal <= 0 || entradaPrecisaConta}
               >
                 {submitting ? 'Parcelando...' : `Parcelar em ${plano.numParcelas}x`}
+              </Button>
+            </>
+          ) : modo === 'acumular' ? (
+            <>
+              <div className="p-3 rounded-lg bg-muted/50 text-sm space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Fatura de {ymLabel(billingPeriod)} fica</span>
+                  <span className="font-medium text-success">quitada</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Vira "A pagar" em {ymLabel(proxComp)}</span>
+                  <span className="tabular font-medium text-warning">{formatCurrency(principalAcum)}</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground pt-1">
+                  Joga a fatura inteira pra próxima, sem juros. Aparece em "A pagar" e nos
+                  Próximos Vencimentos. O principal não conta de novo nos gastos.
+                </p>
+              </div>
+
+              <Button
+                className="w-full"
+                type="submit"
+                disabled={submitting || faturaTotal <= 0}
+              >
+                {submitting ? 'Acumulando...' : `Acumular p/ fatura de ${ymLabel(proxComp)}`}
               </Button>
             </>
           ) : (
