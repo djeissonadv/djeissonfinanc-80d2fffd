@@ -44,6 +44,13 @@ export function getMonthName(monthIndex: number): string {
   return months[monthIndex];
 }
 
+/** Soma n meses a uma competência "YYYY-MM", retornando "YYYY-MM". */
+export function addMonthsYM(ym: string, n: number): string {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 /**
  * Retorna uma data YYYY-MM-DD DENTRO do mês de competência (YYYY-MM),
  * mantendo o dia informado, com clamp no último dia do mês (Fev → 28/29).

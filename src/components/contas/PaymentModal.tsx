@@ -5,13 +5,14 @@ import { Input } from '@/components/ui/input';
 import { MoneyInput } from '@/components/ui/money-input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency, getMonthName } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTodayIso } from '@/hooks/useTodayIso';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { generateHash } from '@/lib/csv-parser';
+import { planoParcelamentoFatura } from '@/lib/parcelamento-fatura';
 
 interface Props {
   open: boolean;
@@ -49,6 +50,10 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
   const [contaOrigem, setContaOrigem] = useState<string>('');
   const [data, setData] = useState<string>(todayIso);
   const [submitting, setSubmitting] = useState(false);
+  // Modo: pagar agora (à vista/parcial) ou parcelar a fatura inteira (financiar).
+  const [modo, setModo] = useState<'pagar' | 'parcelar'>('pagar');
+  const [numParcelas, setNumParcelas] = useState<number>(12);
+  const [valorParcela, setValorParcela] = useState<number>(0);
 
   // Pré-preenche o valor com a fatura total quando o modal ABRE.
   // Arredonda a 2 casas: faturaTotal vem de soma de floats (ex:
@@ -59,6 +64,9 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
     if (open) {
       setValor(faturaTotal > 0 ? Math.round(faturaTotal * 100) / 100 : 0);
       setData(todayIso);
+      setModo('pagar');
+      setNumParcelas(12);
+      setValorParcela(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -168,6 +176,77 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
     setSubmitting(false);
   };
 
+  // PARCELAR a fatura inteira (financiar). O principal das compras JÁ foi
+  // contado como gasto no mês delas — então NÃO criamos novas despesas (seria
+  // contagem dupla). Em vez disso:
+  //  1) abatemos a fatura atual (receita ignorar_dashboard=true → some do "a pagar")
+  //  2) criamos as N parcelas em contas_pagar_receber ("A pagar"), que aparecem
+  //     nos Próximos Vencimentos mas NÃO entram em "Gastos do mês" nem no saldo.
+  const plano = planoParcelamentoFatura(billingPeriod, numParcelas, valorParcela, faturaTotal);
+
+  const handleParcelar = async () => {
+    if (!user) return;
+    if (plano.principal <= 0 || plano.numParcelas < 1 || plano.valorParcela <= 0) return;
+
+    setSubmitting(true);
+    try {
+      const runId = crypto.randomUUID().slice(0, 8);
+
+      // 1) Abate a fatura atual (financiada).
+      const descAbate = `Parcelamento da fatura (${plano.numParcelas}x)`;
+      const hashAbate = generateHash(todayIso, descAbate, plano.principal, pessoaNome) + '_parcfat_' + runId;
+      const { error: errAbate } = await supabase.from('transacoes').insert({
+        user_id: user.id,
+        conta_id: contaId,
+        data: todayIso,
+        descricao: descAbate,
+        descricao_normalizada: descAbate.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim(),
+        valor: plano.principal,
+        tipo: 'receita',
+        categoria: 'Pagamento Fatura',
+        essencial: true,
+        hash_transacao: hashAbate,
+        pessoa: pessoaNome,
+        mes_competencia: billingPeriod,
+        ignorar_dashboard: true,
+        pago: true,
+      });
+      if (errAbate) throw errAbate;
+
+      // 2) Parcelas como "A pagar" (não recontam o principal).
+      const mesOrigem = `${getMonthName(month).toLowerCase()}/${String(year).slice(2)}`;
+      const rows = plano.parcelas.map(p => ({
+        user_id: user.id,
+        tipo: 'pagar' as const,
+        descricao: `Parcela fatura ${contaNome} ${mesOrigem} (${p.idx}/${plano.numParcelas})`,
+        valor: p.valor,
+        mes: p.competencia,
+        data_vencimento: `${p.competencia}-10`,
+        categoria: 'Pagamento Fatura',
+        pago: false,
+      }));
+      const { error: errPR } = await supabase.from('contas_pagar_receber').insert(rows);
+      if (errPR) {
+        // Rollback do abatimento pra não deixar a fatura "paga" sem as parcelas.
+        await supabase.from('transacoes').delete().eq('hash_transacao', hashAbate);
+        throw errPR;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['transacoes'] });
+      queryClient.invalidateQueries({ queryKey: ['fatura-acumulada'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['contas-pagar-receber'] });
+      queryClient.invalidateQueries({ queryKey: ['vencimentos'] });
+
+      toast({ title: 'Fatura parcelada', description: `${plano.numParcelas}x de ${formatCurrency(plano.valorParcela)} — 1ª parcela na fatura seguinte.` });
+      onOpenChange(false);
+    } catch (err: any) {
+      console.error(err);
+      toast({ title: 'Erro ao parcelar fatura', description: String(err?.message || err).slice(0, 200), variant: 'destructive' });
+    }
+    setSubmitting(false);
+  };
+
   const valorNum = valor;
   const restante = Math.max(0, faturaTotal - valorNum);
 
@@ -177,12 +256,80 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
         <DialogHeader>
           <DialogTitle>Pagar fatura — {contaNome}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={(e) => { e.preventDefault(); handleConfirm(); }} className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); modo === 'pagar' ? handleConfirm() : handleParcelar(); }} className="space-y-4">
           <div className="p-3 rounded-xl bg-muted text-center">
             <p className="text-sm text-muted-foreground">Total da fatura</p>
             <p className="text-2xl font-bold tabular text-destructive">{formatCurrency(faturaTotal)}</p>
           </div>
 
+          {/* Toggle: pagar agora vs parcelar (financiar a fatura inteira) */}
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-muted">
+            <button
+              type="button"
+              onClick={() => setModo('pagar')}
+              className={`h-8 rounded-md text-sm font-medium transition-colors ${modo === 'pagar' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Pagar agora
+            </button>
+            <button
+              type="button"
+              onClick={() => setModo('parcelar')}
+              className={`h-8 rounded-md text-sm font-medium transition-colors ${modo === 'parcelar' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Parcelar
+            </button>
+          </div>
+
+          {modo === 'parcelar' ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Nº de parcelas</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={36}
+                    inputMode="numeric"
+                    value={numParcelas}
+                    onChange={(e) => setNumParcelas(Math.max(1, Math.min(36, parseInt(e.target.value) || 1)))}
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Valor de cada parcela</Label>
+                  <MoneyInput value={valorParcela} onChange={setValorParcela} placeholder="0,00" />
+                </div>
+              </div>
+
+              {plano.valorParcela > 0 && (
+                <div className="p-3 rounded-lg bg-muted/50 text-sm space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total parcelado</span>
+                    <span className="tabular font-medium">{formatCurrency(plano.totalParcelado)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Juros embutidos</span>
+                    <span className={`tabular ${plano.juros > 0 ? 'text-warning' : plano.juros < 0 ? 'text-success' : ''}`}>
+                      {plano.juros >= 0 ? '+' : ''}{formatCurrency(plano.juros)}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground pt-1">
+                    1ª parcela na fatura seguinte. As {plano.numParcelas} parcelas entram em "A pagar" — a fatura
+                    atual fica quitada e o principal não conta de novo nos gastos.
+                  </p>
+                </div>
+              )}
+
+              <Button
+                className="w-full"
+                type="submit"
+                disabled={submitting || plano.valorParcela <= 0 || plano.numParcelas < 1 || faturaTotal <= 0}
+              >
+                {submitting ? 'Parcelando...' : `Parcelar em ${plano.numParcelas}x`}
+              </Button>
+            </>
+          ) : (
+          <>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Valor a pagar</Label>
@@ -241,6 +388,8 @@ export function PaymentModal({ open, onOpenChange, contaId, contaNome, faturaTot
           >
             {submitting ? 'Registrando...' : 'Confirmar pagamento'}
           </Button>
+          </>
+          )}
         </form>
       </DialogContent>
     </Dialog>
