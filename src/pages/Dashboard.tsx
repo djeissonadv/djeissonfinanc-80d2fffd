@@ -563,34 +563,29 @@ export default function DashboardPage() {
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" />
-              Ranking de Categorias
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold">Ranking de Categorias</h3>
+            </div>
             {categoryRanking.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nenhuma despesa este mês</p>
             ) : (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                   {(categoriasExpanded ? categoryRanking : categoryRanking.slice(0, 8)).map(({ cat, total, pct, color }) => (
                     <button
                       key={cat}
-                      className="flex items-center justify-between w-full hover:bg-muted/50 rounded-lg p-2 -m-2 transition-colors cursor-pointer text-left min-w-0"
+                      className="flex items-center justify-between w-full hover:bg-muted/50 rounded-md px-1.5 py-1 -mx-1.5 transition-colors cursor-pointer text-left min-w-0"
                       onClick={() => navigate(`/transacoes?categoria=${encodeURIComponent(cat)}&mes=${billingMonth}&tipo=despesa`)}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <div
-                          className="w-3 h-3 rounded-full shrink-0"
-                          style={{ backgroundColor: color }}
-                        />
-                        <span className="text-sm font-medium truncate">{cat}</span>
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                        <span className="text-sm truncate">{cat}</span>
                       </div>
                       <div className="text-right shrink-0 ml-2">
-                        <span className="text-sm font-medium">{formatCurrency(total)}</span>
-                        <span className="text-xs text-muted-foreground ml-2">{pct.toFixed(0)}%</span>
+                        <span className="text-sm font-medium tabular">{formatCurrency(total)}</span>
+                        <span className="text-xs text-muted-foreground ml-1.5">{pct.toFixed(0)}%</span>
                       </div>
                     </button>
                   ))}
@@ -598,17 +593,11 @@ export default function DashboardPage() {
                 {categoryRanking.length > 8 && (
                   <button
                     onClick={() => setCategoriasExpanded(!categoriasExpanded)}
-                    className="mt-4 w-full flex items-center justify-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors py-2 border-t"
+                    className="mt-2 w-full flex items-center justify-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors py-1.5 border-t"
                   >
-                    {categoriasExpanded ? (
-                      <>
-                        Mostrar menos <ChevronUp className="h-4 w-4" />
-                      </>
-                    ) : (
-                      <>
-                        Ver todas ({categoryRanking.length}) <ChevronDown className="h-4 w-4" />
-                      </>
-                    )}
+                    {categoriasExpanded
+                      ? <>Mostrar menos <ChevronUp className="h-3.5 w-3.5" /></>
+                      : <>Ver todas ({categoryRanking.length}) <ChevronDown className="h-3.5 w-3.5" /></>}
                   </button>
                 )}
               </>
@@ -620,40 +609,34 @@ export default function DashboardPage() {
 
 
         <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5" />
-              Essenciais vs Não-Essenciais
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div
-                className="cursor-pointer hover:bg-muted/50 rounded-lg p-2 -m-2 transition-colors"
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold">Essenciais vs Não-Essenciais</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-4 mb-2">
+              <button
+                type="button"
+                className="cursor-pointer hover:bg-muted/50 rounded-md px-1.5 py-1 -mx-1.5 transition-colors text-left"
                 onClick={() => navigate('/transacoes?essencial=true')}
               >
-                <p className="text-sm text-muted-foreground">Essenciais</p>
-                <p className="text-xl font-bold text-success">{formatCurrency(totalEssencial)}</p>
-                <p className="text-xs text-muted-foreground">{pctEssencial.toFixed(0)}% (meta: 70%)</p>
-              </div>
-              <div
-                className="cursor-pointer hover:bg-muted/50 rounded-lg p-2 -m-2 transition-colors"
+                <p className="text-xs text-muted-foreground">Essenciais · {pctEssencial.toFixed(0)}% <span className="opacity-60">(meta 70%)</span></p>
+                <p className="text-lg font-bold tabular text-success">{formatCurrency(totalEssencial)}</p>
+              </button>
+              <button
+                type="button"
+                className="cursor-pointer hover:bg-muted/50 rounded-md px-1.5 py-1 -mx-1.5 transition-colors text-left"
                 onClick={() => navigate('/transacoes?essencial=false')}
               >
-                <p className="text-sm text-muted-foreground">Não-essenciais</p>
-                <p className="text-xl font-bold text-warning">{formatCurrency(totalNaoEssencial)}</p>
-                <p className="text-xs text-muted-foreground">{(100 - pctEssencial).toFixed(0)}% (meta: 30%)</p>
-              </div>
+                <p className="text-xs text-muted-foreground">Não-essenciais · {(100 - pctEssencial).toFixed(0)}% <span className="opacity-60">(meta 30%)</span></p>
+                <p className="text-lg font-bold tabular text-warning">{formatCurrency(totalNaoEssencial)}</p>
+              </button>
             </div>
-            <div className="relative h-4 rounded-full bg-muted overflow-hidden">
+            <div className="relative h-2 rounded-full bg-muted overflow-hidden">
               <div
-                className="absolute inset-y-0 left-0 bg-foreground/20 rounded-full transition-all"
+                className="absolute inset-y-0 left-0 bg-success/50 rounded-full transition-all"
                 style={{ width: `${pctEssencial}%` }}
               />
-            </div>
-            <div className="flex justify-between mt-1">
-              <span className="text-xs text-muted-foreground">Essenciais</span>
-              <span className="text-xs text-muted-foreground">Não-essenciais</span>
             </div>
           </CardContent>
         </Card>
