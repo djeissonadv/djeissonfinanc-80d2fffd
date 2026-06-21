@@ -310,7 +310,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-5 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
         <div className="flex items-center gap-2">
@@ -330,9 +330,9 @@ export default function DashboardPage() {
           pergunta-âncora). Saldo atual fica em pill secundária.
           Se user não cadastrou conta corrente, mostra CTA em vez de R$ 0,00. */}
       <Card className="overflow-hidden">
-        <CardContent className="p-8 md:p-10">
-          <div className="flex flex-wrap items-end justify-between gap-6">
-            <div className="space-y-2">
+        <CardContent className="p-5 md:p-6">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="space-y-1">
               {semContaDebito ? (
                 <>
                   <p className="text-sm text-muted-foreground uppercase tracking-wider">Saldo</p>
@@ -350,8 +350,8 @@ export default function DashboardPage() {
                 </>
               ) : (
                 <>
-                  <p className="text-sm text-muted-foreground uppercase tracking-wider">Disponível pra gastar</p>
-                  <p className={`num-hero text-5xl md:text-7xl ${(disponivelHoje ?? 0) >= 0 ? 'text-primary' : 'text-destructive'}`}>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Disponível pra gastar</p>
+                  <p className={`num-hero text-4xl md:text-5xl ${(disponivelHoje ?? 0) >= 0 ? 'text-primary' : 'text-destructive'}`}>
                     {formatCurrency(disponivelHoje ?? 0)}
                   </p>
                   <p className="text-sm text-muted-foreground">
@@ -446,15 +446,15 @@ export default function DashboardPage() {
       {/* Métricas secundárias em grid de 3 */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="cursor-pointer hover-lift group" onClick={() => navigate('/transacoes?tipo=despesa')}>
-          <CardContent className="p-6">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Gastos do mês</p>
-            <p className="num-display text-3xl md:text-4xl text-foreground">{formatCurrency(totalDespesasComPrev)}</p>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Gastos do mês</p>
+            <p className="num-display text-2xl md:text-3xl text-foreground">{formatCurrency(totalDespesasComPrev)}</p>
             {totalDespesasPendentes > 0 && (
-              <p className="text-[11px] text-muted-foreground tabular mt-1">
+              <p className="text-[11px] text-muted-foreground tabular mt-0.5">
                 {formatCurrency(totalDespesas)} pago · +{formatCurrency(totalDespesasPendentes)} previsto
               </p>
             )}
-            <div className="mt-3 space-y-1.5">
+            <div className="mt-2.5 space-y-1.5">
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>{percentGasto.toFixed(0)}% da receita</span>
                 <span className="tabular">{formatCurrency(totalReceitasComPrev)} entr.</span>
@@ -464,21 +464,21 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-6">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Disponível no mês</p>
-            <p className={`num-display text-3xl md:text-4xl ${disponivel >= 0 ? 'text-primary' : 'text-destructive'}`}>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Disponível no mês</p>
+            <p className={`num-display text-2xl md:text-3xl ${disponivel >= 0 ? 'text-primary' : 'text-destructive'}`}>
               {formatCurrency(disponivel)}
             </p>
-            <p className="mt-3 text-xs text-muted-foreground">
+            <p className="mt-2 text-xs text-muted-foreground">
               {(saldoAnterior || 0) >= 0 ? '+' : ''}{formatCurrency(saldoAnterior || 0)} do mês anterior
             </p>
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover-lift" onClick={() => navigate('/transacoes')}>
-          <CardContent className="p-6">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Transações</p>
-            <p className="num-display text-3xl md:text-4xl text-foreground">{transacoesMes?.length || 0}</p>
-            <p className="mt-3 text-xs text-muted-foreground">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Transações</p>
+            <p className="num-display text-2xl md:text-3xl text-foreground">{transacoesMes?.length || 0}</p>
+            <p className="mt-2 text-xs text-muted-foreground">
               {transacoesMes?.filter(t => t.tipo === 'receita').length || 0} entradas · {transacoesMes?.filter(t => t.tipo === 'despesa').length || 0} saídas
             </p>
           </CardContent>
