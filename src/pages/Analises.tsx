@@ -32,6 +32,8 @@ import { KpiHeroStrip } from '@/components/analytics/KpiHeroStrip';
 import { CashflowChart } from '@/components/analytics/CashflowChart';
 import { CategoryComposition } from '@/components/analytics/CategoryComposition';
 import { GastosMedios } from '@/components/analytics/GastosMedios';
+import { InsightsFinanceiros } from '@/components/analytics/InsightsFinanceiros';
+import { gerarInsights } from '@/lib/insights-financeiros';
 import { TrendsList } from '@/components/analytics/TrendsList';
 import {
   AnomaliesList,
@@ -78,6 +80,16 @@ export default function AnalisesPage() {
   // Últimos 12 meses — usa hook compartilhado com Projeções/Planejamento/Dívidas
   // pra evitar refetch ao trocar de tab (cache 2min).
   const { data: allTransactions, isLoading } = useTransacoes12m();
+
+  // Ids dos cartões de crédito — usados pelos insights (gasto no crédito).
+  const { data: cartaoIds } = useQuery({
+    queryKey: ['cartao-ids', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase.from('contas').select('id').eq('user_id', user!.id).eq('tipo', 'credito');
+      return (data || []).map((c) => c.id);
+    },
+    enabled: !!user,
+  });
 
   // Saldo atual — usa lib/saldo (single source). Antes Análises tinha cálculo
   // próprio que não filtrava pago=false nem ignorava categoria Saldo Inicial
@@ -132,6 +144,12 @@ export default function AnalisesPage() {
   const gastosMedios = useMemo(
     () => (allTransactions ? buildGastosMedios(allTransactions, 6, todayIso) : null),
     [allTransactions, todayIso],
+  );
+
+  // Insights determinísticos: boas práticas × gastos reais.
+  const insights = useMemo(
+    () => (allTransactions ? gerarInsights(allTransactions, cartaoIds || [], todayIso) : []),
+    [allTransactions, cartaoIds, todayIso],
   );
 
   const trends = useMemo(
@@ -286,6 +304,9 @@ export default function AnalisesPage() {
           onCategoriaClick={(cat) => navigate(`/transacoes?categoria=${encodeURIComponent(cat)}`)}
         />
       )}
+
+      {/* Insights: boas práticas × seus gastos */}
+      <InsightsFinanceiros insights={insights} />
 
       {/* 3. Insights: tendências + anomalias + recorrentes */}
       <div className="grid gap-4 md:grid-cols-3">
