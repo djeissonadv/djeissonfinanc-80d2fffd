@@ -233,6 +233,73 @@ export function mediasPorTipoParcela(
   };
 }
 
+// Categorias que NÃO são gasto real do dia a dia (internas/transferências) —
+// fora da base da calculadora pra não inflar.
+const CATEGORIAS_NAO_GASTO = new Set([
+  'Pagamento Fatura', 'Transferência entre contas', 'Saldo Inicial',
+  'Reembolsos', 'Devoluções',
+]);
+
+/**
+ * Média mensal por categoria das despesas NÃO-parceladas (à vista / recorrentes)
+ * dos últimos N meses completos. Base editável da Calculadora da Casa: o usuário
+ * vê cada categoria e conserta a que estiver irreal — em vez de um total opaco.
+ *
+ * Separa as parcelas (que decaem) das despesas recorrentes (que ficam).
+ */
+export function mediaPorCategoriaNaoParcela(
+  transactions: TransactionRecord[],
+  monthsBack = 5,
+  todayIso?: string,
+): { categoria: string; media: number }[] {
+  const mesAtual = (todayIso || '').substring(0, 7);
+  const porMesCat: Record<string, Record<string, number>> = {};
+  for (const t of transactions) {
+    if (t.ignorar_dashboard || t.tipo !== 'despesa') continue;
+    if ((t.parcela_total ?? 0) > 1) continue; // só NÃO-parcela
+    const cat = t.categoria || 'Outros';
+    if (CATEGORIAS_NAO_GASTO.has(cat)) continue;
+    const k = monthKey(t);
+    if (mesAtual && k >= mesAtual) continue;
+    (porMesCat[k] ||= {})[cat] = (porMesCat[k]?.[cat] || 0) + Number(t.valor);
+  }
+  const meses = Object.keys(porMesCat).sort().slice(-monthsBack);
+  const n = meses.length || 1;
+  const catTotais: Record<string, number> = {};
+  for (const m of meses) {
+    for (const [c, v] of Object.entries(porMesCat[m])) catTotais[c] = (catTotais[c] || 0) + v;
+  }
+  return Object.entries(catTotais)
+    .map(([categoria, total]) => ({ categoria, media: Math.round((total / n) * 100) / 100 }))
+    .filter((c) => c.media > 0)
+    .sort((a, b) => b.media - a.media);
+}
+
+/**
+ * Reposição: valor médio mensal de parcelas que COMEÇAM (parcela_atual === 1).
+ * É a taxa real de "parcelas novas que sempre aparecem" (São João etc.) — bem
+ * menor que a média de TODAS as parcelas. Vira o piso da projeção.
+ */
+export function reposicaoParcelasNovas(
+  transactions: TransactionRecord[],
+  monthsBack = 5,
+  todayIso?: string,
+): number {
+  const mesAtual = (todayIso || '').substring(0, 7);
+  const porMes: Record<string, number> = {};
+  for (const t of transactions) {
+    if (t.ignorar_dashboard || t.tipo !== 'despesa') continue;
+    if (t.parcela_atual !== 1) continue; // só as que começam
+    const k = monthKey(t);
+    if (mesAtual && k >= mesAtual) continue;
+    porMes[k] = (porMes[k] || 0) + Number(t.valor);
+  }
+  const meses = Object.keys(porMes).sort().slice(-monthsBack);
+  const n = meses.length || 1;
+  const total = meses.reduce((s, k) => s + porMes[k], 0);
+  return Math.round((total / n) * 100) / 100;
+}
+
 // ---------------------------------------------------------------------------
 // KPIs do mês: saldo livre projetado, taxa de poupança, % despesas essenciais.
 // ---------------------------------------------------------------------------

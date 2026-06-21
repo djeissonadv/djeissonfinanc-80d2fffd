@@ -89,3 +89,40 @@ describe('buildGastosMedios', () => {
     expect(r.categorias).toHaveLength(0);
   });
 });
+
+import { mediaPorCategoriaNaoParcela, reposicaoParcelasNovas } from '@/lib/analytics-engine';
+
+describe('mediaPorCategoriaNaoParcela', () => {
+  it('média por categoria das NÃO-parceladas, exclui parcelas e categorias internas', () => {
+    const txs = [
+      tx({ data: '2026-01-05', categoria: 'Alimentação', valor: 1000 }),
+      tx({ data: '2026-02-05', categoria: 'Alimentação', valor: 2000 }),
+      tx({ data: '2026-01-05', categoria: 'Transporte', valor: 500 }),
+      // parcela → ignorada aqui (vai pro timeline de parcelas)
+      tx({ data: '2026-01-05', categoria: 'Compras', valor: 9999, parcela_total: 12, parcela_atual: 3 }),
+      // categoria interna → fora da base
+      tx({ data: '2026-01-05', categoria: 'Pagamento Fatura', valor: 5000 }),
+    ];
+    const r = mediaPorCategoriaNaoParcela(txs, 5, '2026-03-10');
+    const ali = r.find(c => c.categoria === 'Alimentação')!;
+    const tr = r.find(c => c.categoria === 'Transporte')!;
+    expect(ali.media).toBe(1500); // (1000+2000)/2 meses
+    expect(tr.media).toBe(250);   // 500/2 meses
+    expect(r.find(c => c.categoria === 'Compras')).toBeFalsy(); // parcela fora
+    expect(r.find(c => c.categoria === 'Pagamento Fatura')).toBeFalsy();
+  });
+});
+
+describe('reposicaoParcelasNovas', () => {
+  it('média mensal do valor de parcelas que COMEÇAM (parcela_atual===1)', () => {
+    const txs = [
+      tx({ data: '2026-01-05', valor: 100, parcela_atual: 1, parcela_total: 12 }),
+      tx({ data: '2026-01-05', valor: 50, parcela_atual: 1, parcela_total: 6 }),
+      tx({ data: '2026-02-05', valor: 30, parcela_atual: 1, parcela_total: 10 }),
+      // parcela_atual > 1 → não conta (já tinha começado antes)
+      tx({ data: '2026-02-05', valor: 999, parcela_atual: 5, parcela_total: 12 }),
+    ];
+    const r = reposicaoParcelasNovas(txs, 5, '2026-03-10');
+    expect(r).toBe(90); // (150 + 30) / 2 meses
+  });
+});
