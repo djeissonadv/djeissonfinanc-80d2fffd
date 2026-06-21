@@ -1,87 +1,162 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { MoneyInput } from '@/components/ui/money-input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency } from '@/lib/format';
 import { useTransacoes12m } from '@/hooks/useTransacoes12m';
+import { useTransacoesPeriodo } from '@/hooks/useTransacoesMes';
 import { useFontesReceita } from '@/hooks/useFontesReceita';
 import { useTodayIso } from '@/hooks/useTodayIso';
-import { buildGastosMedios } from '@/lib/analytics-engine';
+import { mediasPorTipoParcela } from '@/lib/analytics-engine';
+import { projetarFolga } from '@/lib/projecao-folga';
 import { Home, TrendingDown, TrendingUp } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
 
 /**
- * "Cabe no mês?" — calculadora prática de FOLGA mensal pra decisão da casa.
+ * "Cabe no mês?" — projeção de FOLGA mês a mês pra decisão da casa.
  *
- * Cenário do usuário: vai sair do aluguel e começar a pagar financiamento (uma
- * troca), pode quitar empréstimos e o carro com o dinheiro do apartamento, e
- * quer saber se passa o mês com o que tem — incluindo as compras da casa.
- *
- * Pré-preenche renda (fontes de receita) e gastos médios (raio-X dos últimos
- * meses). O usuário ajusta e completa o que falta. Tudo editável.
+ * Modela a troca aluguel→financiamento + quitação de dívidas com o apê +
+ * compras da casa, projetando mês a mês: parcelas que TERMINAM aliviam, e uma
+ * reposição (parcelas novas que sempre aparecem) segura um piso realista.
  */
 export function FolgaMensalTab() {
   const { data: txs, isLoading } = useTransacoes12m();
   const { receitaBase } = useFontesReceita();
   const todayIso = useTodayIso();
 
+  // Parcelas conhecidas (atuais + projetadas) dos próximos 3 anos, por competência.
+  const anoBase = Number(todayIso.slice(0, 4));
+  const { data: parcelasFuturas } = useTransacoesPeriodo({
+    inicioComp: `${anoBase}-01`,
+    fimComp: `${anoBase + 3}-12`,
+    inicioData: `${anoBase}-01-01`,
+    fimData: `${anoBase + 3}-12-31`,
+    apenasVisivelDashboard: true,
+    apenasParceladas: true,
+    cachePrefix: 'parcelas-folga',
+  });
+
   const [renda, setRenda] = useState(0);
-  const [gastosMedios, setGastosMedios] = useState(0);
-  const [aluguelAtual, setAluguelAtual] = useState(0);
+  const [gastosDiaDia, setGastosDiaDia] = useState(0);
+  const [aluguel, setAluguel] = useState(0);
   const [financiamento, setFinanciamento] = useState(0);
-  const [comprasCasa, setComprasCasa] = useState(0);
+  const [comprasParcela, setComprasParcela] = useState(0);
+  const [comprasMeses, setComprasMeses] = useState(18);
   const [emprestimos, setEmprestimos] = useState(0);
   const [carro, setCarro] = useState(0);
+  const [reposicao, setReposicao] = useState(0);
   const [quitarEmprestimos, setQuitarEmprestimos] = useState(true);
   const [quitarCarro, setQuitarCarro] = useState(true);
   const [prefilled, setPrefilled] = useState(false);
 
-  // Pré-preenche 1x quando os dados chegam (renda + média de gastos).
+  const medias = useMemo(
+    () => (txs ? mediasPorTipoParcela(txs, 6, todayIso) : null),
+    [txs, todayIso],
+  );
+
+  // Pré-preenche 1x: renda, gastos do dia a dia (não-parcela) e reposição (parcela).
   useEffect(() => {
-    if (prefilled || !txs) return;
-    const gm = buildGastosMedios(txs, 6, todayIso);
+    if (prefilled || !medias) return;
     if (receitaBase > 0) setRenda(Math.round(receitaBase * 100) / 100);
-    if (gm.mediaMensal > 0) setGastosMedios(gm.mediaMensal);
+    if (medias.mediaNaoParcela > 0) setGastosDiaDia(medias.mediaNaoParcela);
+    if (medias.mediaParcela > 0) setReposicao(medias.mediaParcela);
     setPrefilled(true);
-  }, [txs, receitaBase, todayIso, prefilled]);
+  }, [medias, receitaBase, prefilled]);
+
+  const parcelasPorMes = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const p of (parcelasFuturas || []) as any[]) {
+      const k = p.mes_competencia || (p.data || '').substring(0, 7);
+      if (k) m[k] = (m[k] || 0) + Number(p.valor);
+    }
+    return m;
+  }, [parcelasFuturas]);
+
+  const mesInicio = todayIso.slice(0, 7); // YYYY-MM corrente
+  const deducoes = aluguel + (quitarCarro ? carro : 0) + (quitarEmprestimos ? emprestimos : 0);
+  const baseFixaMensal = Math.max(0, gastosDiaDia - deducoes) + financiamento;
+
+  const timeline = useMemo(() => projetarFolga({
+    renda,
+    baseFixaMensal,
+    parcelasPorMes,
+    reposicao,
+    comprasCasaParcela: comprasParcela,
+    comprasCasaMeses: Math.max(0, comprasMeses),
+    mesInicio,
+    nMeses: 24,
+  }), [renda, baseFixaMensal, parcelasPorMes, reposicao, comprasParcela, comprasMeses, mesInicio]);
 
   if (isLoading) {
     return <Card><CardContent className="p-6"><Skeleton className="h-64" /></CardContent></Card>;
   }
 
-  // Aluguel sai e vira financiamento → desconta o aluguel da média (senão conta 2x).
-  const gastosAjustados = Math.max(0, gastosMedios - aluguelAtual);
-  const dividas = (quitarEmprestimos ? 0 : emprestimos) + (quitarCarro ? 0 : carro);
-  const comprometimento = gastosAjustados + financiamento + comprasCasa + dividas;
-  const folga = renda - comprometimento;
-  const pctComprometido = renda > 0 ? Math.round((comprometimento / renda) * 100) : 0;
-  const economiaQuitando = (quitarEmprestimos ? emprestimos : 0) + (quitarCarro ? carro : 0);
+  // Hoje × Depois (1º mês). "Hoje" = dia a dia (com aluguel/carro/empréstimos) + parcelas atuais.
+  const parcelasHoje = Math.max(parcelasPorMes[mesInicio] || 0, reposicao);
+  const comprometimentoHoje = Math.round((gastosDiaDia + parcelasHoje) * 100) / 100;
+  const depois1 = timeline[0]?.comprometimento ?? 0;
+  const alivio = Math.round((comprometimentoHoje - depois1) * 100) / 100;
+  const folga1 = timeline[0]?.folga ?? 0;
+
+  // Mês em que as compras da casa terminam (alívio extra).
+  const fimCompras = comprasParcela > 0 && comprasMeses > 0 ? timeline[Math.min(comprasMeses, 23)] : null;
 
   return (
     <div className="space-y-4">
       {/* Resultado em destaque */}
-      <Card className={folga >= 0 ? 'border-success/40 bg-success/5' : 'border-destructive/40 bg-destructive/5'}>
+      <Card className={folga1 >= 0 ? 'border-success/40 bg-success/5' : 'border-destructive/40 bg-destructive/5'}>
         <CardContent className="p-5 md:p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm text-muted-foreground">No fim do mês, com tudo isso, você</p>
-              <p className={`num-display text-3xl md:text-4xl mt-1 ${folga >= 0 ? 'text-success' : 'text-destructive'}`}>
-                {folga >= 0 ? 'sobra ' : 'falta '}{formatCurrency(Math.abs(folga))}
+              <p className="text-sm text-muted-foreground">Logo que mudar, todo mês você</p>
+              <p className={`num-display text-3xl md:text-4xl mt-1 ${folga1 >= 0 ? 'text-success' : 'text-destructive'}`}>
+                {folga1 >= 0 ? 'sobra ' : 'falta '}{formatCurrency(Math.abs(folga1))}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Comprometendo {formatCurrency(comprometimento)} de {formatCurrency(renda)} ({pctComprometido}% da renda)
+                Sua conta vai de <strong className="tabular">{formatCurrency(comprometimentoHoje)}</strong> (hoje) pra{' '}
+                <strong className="tabular">{formatCurrency(depois1)}</strong> (depois)
+                {alivio !== 0 && <> — {alivio >= 0 ? 'alívio' : 'aumento'} de <strong className="tabular">{formatCurrency(Math.abs(alivio))}</strong>/mês</>}
               </p>
             </div>
-            {folga >= 0
+            {folga1 >= 0
               ? <TrendingUp className="h-7 w-7 text-success shrink-0" />
               : <TrendingDown className="h-7 w-7 text-destructive shrink-0" />}
           </div>
-          {economiaQuitando > 0 && (
+          {fimCompras && (
             <p className="text-[12px] text-success mt-3">
-              Quitando o que você marcou, libera {formatCurrency(economiaQuitando)}/mês de parcela.
+              Quando as compras da casa terminarem ({fimCompras.label}), a folga sobe pra {formatCurrency(fimCompras.folga)}/mês.
             </p>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Projeção mês a mês */}
+      <Card>
+        <CardContent className="p-5 md:p-6">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Folga mês a mês (24 meses)</p>
+          <p className="text-xs text-muted-foreground mb-3">
+            Conta as parcelas que terminam + uma reposição de parcelas novas (piso). Verde = sobra, vermelho = falta.
+          </p>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={timeline}>
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={2} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(1)}k`} />
+              <Tooltip
+                formatter={(v: number) => [formatCurrency(v), 'Folga']}
+                labelFormatter={(l) => `Mês ${l}`}
+                contentStyle={{ fontSize: 12, borderRadius: 8 }}
+              />
+              <ReferenceLine y={0} stroke="hsl(var(--border))" />
+              <Bar dataKey="folga" radius={[3, 3, 0, 0]}>
+                {timeline.map((m, i) => (
+                  <Cell key={i} fill={m.folga >= 0 ? 'hsl(var(--success))' : 'hsl(var(--destructive))'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </CardContent>
       </Card>
 
@@ -90,12 +165,13 @@ export function FolgaMensalTab() {
         <CardContent className="p-5 md:p-6 space-y-5">
           <div>
             <h3 className="text-sm font-semibold flex items-center gap-2 mb-3">
-              <Home className="h-4 w-4" /> O que entra e o dia a dia
+              <Home className="h-4 w-4" /> Renda e dia a dia
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Field label="Renda mensal" value={renda} onChange={setRenda} hint="Puxado das suas fontes de receita — ajuste se quiser." />
-              <Field label="Gastos médios do dia a dia" value={gastosMedios} onChange={setGastosMedios} hint="Média dos últimos meses (raio-X). Inclui o aluguel atual." />
-              <Field label="Aluguel atual (vai sair)" value={aluguelAtual} onChange={setAluguelAtual} hint="Quando mudar, o aluguel some. Coloque aqui pra descontar da média." />
+              <Field label="Renda mensal" value={renda} onChange={setRenda} hint="Puxado das suas fontes de receita." />
+              <Field label="Gastos do dia a dia" value={gastosDiaDia} onChange={setGastosDiaDia} hint="Média (sem parcelas de cartão). Inclui o aluguel atual." />
+              <Field label="Aluguel atual (vai sair)" value={aluguel} onChange={setAluguel} hint="Some quando mudar — descontado da média." />
+              <Field label="Reposição de parcelas novas /mês" value={reposicao} onChange={setReposicao} hint="Parcelas que sempre aparecem (São João etc.). Vira o piso da projeção." />
             </div>
           </div>
 
@@ -103,7 +179,13 @@ export function FolgaMensalTab() {
             <h3 className="text-sm font-semibold mb-3">A casa nova</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Field label="Financiamento (parcela/mês)" value={financiamento} onChange={setFinanciamento} hint="Entra no lugar do aluguel." />
-              <Field label="Compras pra casa (parcelas/mês)" value={comprasCasa} onChange={setComprasCasa} hint="Total estimado das parcelas de móveis/eletro." />
+              <Field label="Compras pra casa (parcela/mês)" value={comprasParcela} onChange={setComprasParcela} />
+              <div className="space-y-1">
+                <Label className="text-xs">Em quantos meses?</Label>
+                <Input type="number" min={1} max={60} inputMode="numeric" value={comprasMeses}
+                  onChange={(e) => setComprasMeses(Math.max(1, Math.min(60, parseInt(e.target.value) || 1)))} />
+                <p className="text-[11px] text-muted-foreground">Depois disso, a folga sobe.</p>
+              </div>
             </div>
           </div>
 
@@ -125,32 +207,9 @@ export function FolgaMensalTab() {
                 </div>
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Resumo do comprometimento */}
-      <Card>
-        <CardContent className="p-5 md:p-6">
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-3">Pra onde vai a renda</p>
-          <div className="space-y-2 text-sm">
-            <Linha label="Dia a dia (sem aluguel)" valor={gastosAjustados} />
-            <Linha label="Financiamento da casa" valor={financiamento} />
-            <Linha label="Compras pra casa" valor={comprasCasa} />
-            {!quitarEmprestimos && emprestimos > 0 && <Linha label="Empréstimos" valor={emprestimos} />}
-            {!quitarCarro && carro > 0 && <Linha label="Carro" valor={carro} />}
-            <div className="flex justify-between border-t pt-2 font-semibold">
-              <span>Total comprometido</span>
-              <span className="tabular text-destructive">{formatCurrency(comprometimento)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Renda</span>
-              <span className="tabular text-success">{formatCurrency(renda)}</span>
-            </div>
-            <div className={`flex justify-between font-bold ${folga >= 0 ? 'text-success' : 'text-destructive'}`}>
-              <span>{folga >= 0 ? 'Sobra' : 'Falta'}</span>
-              <span className="tabular">{formatCurrency(Math.abs(folga))}</span>
-            </div>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              Empréstimos e carro fazem parte dos seus gastos médios — marcar "quitar" desconta a parcela da conta.
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -164,15 +223,6 @@ function Field({ label, value, onChange, hint }: { label: string; value: number;
       <Label className="text-xs">{label}</Label>
       <MoneyInput value={value} onChange={onChange} placeholder="0,00" />
       {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
-    </div>
-  );
-}
-
-function Linha({ label, valor }: { label: string; valor: number }) {
-  return (
-    <div className="flex justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="tabular">{formatCurrency(valor)}</span>
     </div>
   );
 }

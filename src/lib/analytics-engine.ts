@@ -203,6 +203,36 @@ export function buildGastosMedios(
   return { mesesConsiderados: n, mediaMensal, categorias, projecaoProximoMes: mediaMensal };
 }
 
+/**
+ * Decompõe a média mensal de despesa em NÃO-parcela (dia a dia, aluguel, contas
+ * fixas) vs PARCELA (parcelamentos de cartão). Usado pela Calculadora da Casa:
+ * o dia a dia fica ~constante, as parcelas decaem (e têm reposição).
+ */
+export function mediasPorTipoParcela(
+  transactions: TransactionRecord[],
+  monthsBack = 6,
+  todayIso?: string,
+): { mediaNaoParcela: number; mediaParcela: number; mesesConsiderados: number } {
+  const mesAtual = (todayIso || '').substring(0, 7);
+  const naoParc: Record<string, number> = {};
+  const parc: Record<string, number> = {};
+  for (const t of transactions) {
+    if (t.ignorar_dashboard || t.tipo !== 'despesa') continue;
+    const k = monthKey(t);
+    if (mesAtual && k >= mesAtual) continue;
+    const ehParcela = (t.parcela_total ?? 0) > 1;
+    (ehParcela ? parc : naoParc)[k] = ((ehParcela ? parc : naoParc)[k] || 0) + Number(t.valor);
+  }
+  const meses = [...new Set([...Object.keys(naoParc), ...Object.keys(parc)])].sort().slice(-monthsBack);
+  const n = meses.length || 1;
+  const soma = (m: Record<string, number>) => meses.reduce((s, k) => s + (m[k] || 0), 0);
+  return {
+    mediaNaoParcela: Math.round((soma(naoParc) / n) * 100) / 100,
+    mediaParcela: Math.round((soma(parc) / n) * 100) / 100,
+    mesesConsiderados: meses.length,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // KPIs do mês: saldo livre projetado, taxa de poupança, % despesas essenciais.
 // ---------------------------------------------------------------------------
