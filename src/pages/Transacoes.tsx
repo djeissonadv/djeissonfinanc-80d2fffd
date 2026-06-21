@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { usePersistedMonth } from '@/hooks/usePersistedMonth';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -30,8 +31,7 @@ export default function TransacoesPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const now = new Date();
-  const [month, setMonth] = useState(now.getMonth());
-  const [year, setYear] = useState(now.getFullYear());
+  const { month, year, setMonth, setYear } = usePersistedMonth();
   const [filterCategoria, setFilterCategoria] = useState('all');
   const [filterSubcategoria, setFilterSubcategoria] = useState('all');
   const [filterTipo, setFilterTipo] = useState('all');

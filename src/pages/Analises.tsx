@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { usePersistedMonth } from '@/hooks/usePersistedMonth';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -55,8 +56,7 @@ export default function AnalisesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const now = new Date();
-  const [month, setMonth] = useState(now.getMonth());
-  const [year, setYear] = useState(now.getFullYear());
+  const { month, year, setMonth, setYear } = usePersistedMonth();
   const { start, end } = getMonthRange(month, year);
   const billingMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
   const todayIso = useTodayIso();

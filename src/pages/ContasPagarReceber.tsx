@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { usePersistedMonth } from '@/hooks/usePersistedMonth';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -56,8 +57,7 @@ export default function ContasPagarReceberPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const now = new Date();
-  const [month, setMonth] = useState(now.getMonth());
-  const [year, setYear] = useState(now.getFullYear());
+  const { month, year, setMonth, setYear } = usePersistedMonth();
   const billingMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>('todos');
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos');

@@ -53,8 +53,8 @@ export function ProximosVencimentos({ saldoAtual, vencimentosExtras = [] }: Prop
 
   return (
     <Card>
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between gap-2 mb-4">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-2 mb-3">
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground uppercase tracking-wider">Próximos vencimentos</p>
             <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
@@ -90,7 +90,7 @@ export function ProximosVencimentos({ saldoAtual, vencimentosExtras = [] }: Prop
         </div>
 
         {/* Resumo: impacto líquido + saldo projetado */}
-        <div className="grid grid-cols-2 gap-2 mb-4">
+        <div className="grid grid-cols-2 gap-2 mb-3">
           <div className="rounded-xl bg-secondary/30 p-3">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground">A pagar</p>
             <p className="text-base font-semibold tabular text-destructive mt-0.5">
@@ -117,9 +117,9 @@ export function ProximosVencimentos({ saldoAtual, vencimentosExtras = [] }: Prop
           </div>
         </div>
 
-        {/* Lista de itens (top 5, com link pra ver tudo) */}
+        {/* Lista de itens (top 3, com link pra ver tudo) */}
         <div className="space-y-1">
-          {vencimentos.slice(0, 5).map(v => {
+          {vencimentos.slice(0, 3).map(v => {
             const label = labelVencimento(v.diasAteVencer);
             const colorClass =
               label.nivel === 'atrasado' ? 'text-destructive' :
@@ -160,11 +160,11 @@ export function ProximosVencimentos({ saldoAtual, vencimentosExtras = [] }: Prop
           })}
         </div>
 
-        {vencimentos.length > 5 && (
+        {vencimentos.length > 3 && (
           <button
             type="button"
             onClick={() => navigate('/a-pagar-receber')}
-            className="mt-3 w-full flex items-center justify-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors py-2 border-t"
+            className="mt-2 w-full flex items-center justify-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors py-1.5 border-t"
           >
             Ver todos ({vencimentos.length}) <ChevronRight className="h-3 w-3" />
           </button>

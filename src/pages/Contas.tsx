@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useState } from 'react';
+import { usePersistedMonth } from '@/hooks/usePersistedMonth';
 import { Plus, CreditCard, Banknote, DollarSign, CalendarDays, PenLine, Trash2, ArrowLeftRight, Zap } from 'lucide-react';
 import { ConfirmDelete } from '@/components/ConfirmDelete';
 import { PaymentModal } from '@/components/contas/PaymentModal';
@@ -50,8 +51,7 @@ export default function ContasPage() {
   const [manualTxConta, setManualTxConta] = useState<{ id: string; nome: string; tipo: 'credito' | 'debito'; mesCompetencia?: string } | null>(null);
 
   const now = new Date();
-  const [month, setMonth] = useState(now.getMonth());
-  const [year, setYear] = useState(now.getFullYear());
+  const { month, year, setMonth, setYear } = usePersistedMonth();
 
   const { data: contas, isLoading: contasLoading } = useQuery({
     queryKey: ['contas', user?.id],

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { usePersistedMonth } from '@/hooks/usePersistedMonth';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -16,7 +17,6 @@ import { MonthSelector } from '@/components/MonthSelector';
 import { ParcelasTimeline } from '@/components/dashboard/ParcelasTimeline';
 import { FaturaDrawer } from '@/components/dashboard/FaturaDrawer';
 import { ProximosVencimentos } from '@/components/dashboard/ProximosVencimentos';
-import { DuplicatasAlert } from '@/components/dashboard/DuplicatasAlert';
 import { QuickDateFixAlert } from '@/components/dashboard/QuickDateFixAlert';
 import { ManualTransactionModal } from '@/components/contas/ManualTransactionModal';
 import { Button } from '@/components/ui/button';
@@ -36,8 +36,7 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { getParentForCategoria } = useCategorias();
   const now = new Date();
-  const [month, setMonth] = useState(now.getMonth());
-  const [year, setYear] = useState(now.getFullYear());
+  const { month, year, setMonth, setYear } = usePersistedMonth();
   const [categoriasExpanded, setCategoriasExpanded] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const { start, end } = getMonthRange(month, year);
@@ -485,11 +484,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Alerta de duplicatas — só aparece se tiver. Substitui o que a página
-          Conciliação fazia (mas só pra dups; idempotência de pagamento e
-          transferência viraram modals dedicados). */}
-      <DuplicatasAlert />
 
       {/* Correção one-time: lançamentos rápidos antigos com data=hoje em vez do
           mês da fatura. Some sozinho quando não há mais o que corrigir. */}
