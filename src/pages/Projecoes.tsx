@@ -13,6 +13,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { TrendingUp, Lock, Activity, Pencil, X, Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { IncomeCommitmentChart } from '@/components/dashboard/IncomeCommitmentChart';
+import { ParcelasTimeline } from '@/components/dashboard/ParcelasTimeline';
+import { useTransacoesPeriodo } from '@/hooks/useTransacoesMes';
 import { RecorrentesProjecao } from '@/components/projecoes/RecorrentesProjecao';
 import { DeepAnalysisCard } from '@/components/analytics/ClaudeAnalysisCards';
 import { toast } from 'sonner';
@@ -76,6 +78,19 @@ export default function ProjecoesPage() {
       return data;
     },
     enabled: !!user,
+  });
+
+  // Parcelas (atuais + projetadas) dos próximos anos — alimenta o timeline de
+  // "parcelas que terminam" (folga futura). Mesmo hook SSOT do Dashboard.
+  const anoBaseParc = new Date().getFullYear();
+  const { data: parcelasFuturas } = useTransacoesPeriodo({
+    inicioComp: `${anoBaseParc}-01`,
+    fimComp: `${anoBaseParc + 3}-12`,
+    inicioData: `${anoBaseParc}-01-01`,
+    fimData: `${anoBaseParc + 3}-12-31`,
+    apenasVisivelDashboard: true,
+    apenasParceladas: true,
+    cachePrefix: 'parcelas-proj',
   });
 
   // Fetch manual overrides
@@ -262,6 +277,14 @@ export default function ProjecoesPage() {
           <div className="flex items-center gap-1"><Pencil className="h-3 w-3" /> Manual</div>
         </div>
       </div>
+
+      {/* Folga futura — parcelas por mês + quanto LIBERA quando cada parcelamento
+          termina. É a resposta a "qual nosso comprometimento nos meses seguintes". */}
+      {parcelasFuturas && parcelasFuturas.length > 0 && (
+        <div className="space-y-4">
+          <ParcelasTimeline parcelas={parcelasFuturas} />
+        </div>
+      )}
 
       <RecorrentesProjecao />
 
