@@ -48,6 +48,7 @@ export function FolgaMensalTab() {
   const [emprestimos, setEmprestimos] = useState(0);
   const [carro, setCarro] = useState(0);
   const [reposicao, setReposicao] = useState(0);
+  const [mesesAteMudanca, setMesesAteMudanca] = useState(3);
   const [quitarEmprestimos, setQuitarEmprestimos] = useState(true);
   const [quitarCarro, setQuitarCarro] = useState(true);
   const [prefilled, setPrefilled] = useState(false);
@@ -75,34 +76,42 @@ export function FolgaMensalTab() {
     return m;
   }, [parcelasFuturas]);
 
-  const mesInicio = todayIso.slice(0, 7); // YYYY-MM corrente
+  const mesAtual = todayIso.slice(0, 7); // YYYY-MM corrente
   const deducoes = aluguel + (quitarCarro ? carro : 0) + (quitarEmprestimos ? emprestimos : 0);
-  const baseFixaMensal = Math.max(0, gastosDiaDia - deducoes) + financiamento;
+  const baseFixaAtual = gastosDiaDia;                                    // hoje: com aluguel/dívidas
+  const baseFixaNova = Math.max(0, gastosDiaDia - deducoes) + financiamento; // depois
 
   const timeline = useMemo(() => projetarFolga({
     renda,
-    baseFixaMensal,
+    baseFixaAtual,
+    baseFixaNova,
     parcelasPorMes,
     reposicao,
     comprasCasaParcela: comprasParcela,
     comprasCasaMeses: Math.max(0, comprasMeses),
-    mesInicio,
+    mesAtual,
+    mesesAteMudanca: Math.max(0, mesesAteMudanca),
     nMeses: 24,
-  }), [renda, baseFixaMensal, parcelasPorMes, reposicao, comprasParcela, comprasMeses, mesInicio]);
+  }), [renda, baseFixaAtual, baseFixaNova, parcelasPorMes, reposicao, comprasParcela, comprasMeses, mesAtual, mesesAteMudanca]);
 
   if (isLoading) {
     return <Card><CardContent className="p-6"><Skeleton className="h-64" /></CardContent></Card>;
   }
 
-  // Hoje × Depois (1º mês). "Hoje" = dia a dia (com aluguel/carro/empréstimos) + parcelas atuais.
-  const parcelasHoje = Math.max(parcelasPorMes[mesInicio] || 0, reposicao);
+  // Hoje × Depois. "Hoje" = dia a dia (com aluguel/carro/empréstimos) + parcelas atuais.
+  // "Depois" = o mês da MUDANÇA (quando financiamento entra e dívidas saem).
+  const idxMudanca = Math.min(Math.max(0, mesesAteMudanca), 23);
+  const parcelasHoje = Math.max(parcelasPorMes[mesAtual] || 0, reposicao);
   const comprometimentoHoje = Math.round((gastosDiaDia + parcelasHoje) * 100) / 100;
-  const depois1 = timeline[0]?.comprometimento ?? 0;
+  const mesMudanca = timeline[idxMudanca];
+  const depois1 = mesMudanca?.comprometimento ?? 0;
   const alivio = Math.round((comprometimentoHoje - depois1) * 100) / 100;
-  const folga1 = timeline[0]?.folga ?? 0;
+  const folga1 = mesMudanca?.folga ?? 0;
+  const labelMudanca = mesMudanca?.label ?? '';
 
   // Mês em que as compras da casa terminam (alívio extra).
-  const fimCompras = comprasParcela > 0 && comprasMeses > 0 ? timeline[Math.min(comprasMeses, 23)] : null;
+  const idxFimCompras = idxMudanca + Math.max(0, comprasMeses);
+  const fimCompras = comprasParcela > 0 && comprasMeses > 0 && idxFimCompras < 24 ? timeline[idxFimCompras] : null;
 
   return (
     <div className="space-y-4">
@@ -111,7 +120,9 @@ export function FolgaMensalTab() {
         <CardContent className="p-5 md:p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm text-muted-foreground">Logo que mudar, todo mês você</p>
+              <p className="text-sm text-muted-foreground">
+                {mesesAteMudanca > 0 ? `Quando mudar (${labelMudanca}), todo mês você` : 'Logo que mudar, todo mês você'}
+              </p>
               <p className={`num-display text-3xl md:text-4xl mt-1 ${folga1 >= 0 ? 'text-success' : 'text-destructive'}`}>
                 {folga1 >= 0 ? 'sobra ' : 'falta '}{formatCurrency(Math.abs(folga1))}
               </p>
@@ -150,6 +161,10 @@ export function FolgaMensalTab() {
                 contentStyle={{ fontSize: 12, borderRadius: 8 }}
               />
               <ReferenceLine y={0} stroke="hsl(var(--border))" />
+              {mesesAteMudanca > 0 && mesMudanca && (
+                <ReferenceLine x={mesMudanca.label} stroke="hsl(var(--primary))" strokeDasharray="3 3"
+                  label={{ value: 'muda', fontSize: 10, fill: 'hsl(var(--primary))', position: 'top' }} />
+              )}
               <Bar dataKey="folga" radius={[3, 3, 0, 0]}>
                 {timeline.map((m, i) => (
                   <Cell key={i} fill={m.folga >= 0 ? 'hsl(var(--success))' : 'hsl(var(--destructive))'} />
@@ -178,6 +193,12 @@ export function FolgaMensalTab() {
           <div className="border-t pt-4">
             <h3 className="text-sm font-semibold mb-3">A casa nova</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Daqui a quantos meses você muda?</Label>
+                <Input type="number" min={0} max={36} inputMode="numeric" value={mesesAteMudanca}
+                  onChange={(e) => setMesesAteMudanca(Math.max(0, Math.min(36, parseInt(e.target.value) || 0)))} />
+                <p className="text-[11px] text-muted-foreground">Até lá, a conta segue a situação atual. 0 = já.</p>
+              </div>
               <Field label="Financiamento (parcela/mês)" value={financiamento} onChange={setFinanciamento} hint="Entra no lugar do aluguel." />
               <Field label="Compras pra casa (parcela/mês)" value={comprasParcela} onChange={setComprasParcela} />
               <div className="space-y-1">
