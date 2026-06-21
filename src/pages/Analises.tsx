@@ -24,12 +24,14 @@ import { getMonthRange, formatCurrency } from '@/lib/format';
 import {
   buildMonthlyFlow,
   buildCategoryComposition,
+  buildGastosMedios,
   computeMonthlyKpis,
   comparePeriods,
 } from '@/lib/analytics-engine';
 import { KpiHeroStrip } from '@/components/analytics/KpiHeroStrip';
 import { CashflowChart } from '@/components/analytics/CashflowChart';
 import { CategoryComposition } from '@/components/analytics/CategoryComposition';
+import { GastosMedios } from '@/components/analytics/GastosMedios';
 import { TrendsList } from '@/components/analytics/TrendsList';
 import {
   AnomaliesList,
@@ -124,6 +126,12 @@ export default function AnalisesPage() {
   const composition = useMemo(
     () => (allTransactions ? buildCategoryComposition(allTransactions, billingMonth) : []),
     [allTransactions, billingMonth],
+  );
+
+  // Raio-X: médias por categoria dos últimos 6 meses completos + projeção.
+  const gastosMedios = useMemo(
+    () => (allTransactions ? buildGastosMedios(allTransactions, 6, todayIso) : null),
+    [allTransactions, todayIso],
   );
 
   const trends = useMemo(
@@ -270,6 +278,14 @@ export default function AnalisesPage() {
         </div>
         <CategoryComposition slices={composition} description={`Despesas do mês ${billingMonth} (clique pra ver lançamentos)`} drillDownMes={billingMonth} />
       </div>
+
+      {/* Raio-X: média por categoria + projeção do próximo mês */}
+      {gastosMedios && (
+        <GastosMedios
+          data={gastosMedios}
+          onCategoriaClick={(cat) => navigate(`/transacoes?categoria=${encodeURIComponent(cat)}`)}
+        />
+      )}
 
       {/* 3. Insights: tendências + anomalias + recorrentes */}
       <div className="grid gap-4 md:grid-cols-3">

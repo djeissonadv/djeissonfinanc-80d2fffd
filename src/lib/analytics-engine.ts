@@ -133,6 +133,77 @@ export function buildCategoryComposition(
 }
 
 // ---------------------------------------------------------------------------
+// Médias de gasto por categoria nos últimos N meses COMPLETOS + projeção do
+// próximo mês. É a base do "raio-X de gastos" e da Calculadora da Casa.
+//
+// Regras de corretude:
+//  - Só despesa realizada (ignorar_dashboard=false).
+//  - Agrupa por competência (mes_competencia || mês da data).
+//  - EXCLUI o mês corrente (incompleto) pra não puxar a média pra baixo.
+//  - Divide pela quantidade de meses na janela (média mensal típica).
+// ---------------------------------------------------------------------------
+export interface CategoriaMedia {
+  categoria: string;
+  total: number;          // soma no período (janela)
+  media: number;          // média mensal
+  mesesComGasto: number;  // em quantos dos N meses houve gasto nessa categoria
+  pctDaMedia: number;     // % da média mensal total
+}
+
+export interface GastosMedios {
+  mesesConsiderados: number;       // N efetivo (≤ monthsBack)
+  mediaMensal: number;             // média de despesa total por mês
+  categorias: CategoriaMedia[];    // ordenadas por média desc
+  projecaoProximoMes: number;      // projeção simples = média mensal
+}
+
+export function buildGastosMedios(
+  transactions: TransactionRecord[],
+  monthsBack = 6,
+  todayIso?: string,
+): GastosMedios {
+  const mesAtual = (todayIso || '').substring(0, 7); // YYYY-MM ('' se não passar)
+  const porMes: Record<string, Record<string, number>> = {}; // mes -> cat -> valor
+  for (const t of transactions) {
+    if (t.ignorar_dashboard) continue;
+    if (t.tipo !== 'despesa') continue;
+    const k = monthKey(t);
+    // só meses ANTERIORES ao corrente (mês corrente é incompleto)
+    if (mesAtual && k >= mesAtual) continue;
+    const cat = t.categoria || 'Outros';
+    (porMes[k] ||= {})[cat] = (porMes[k]?.[cat] || 0) + Number(t.valor);
+  }
+  const meses = Object.keys(porMes).sort().slice(-monthsBack);
+  const n = meses.length;
+  if (n === 0) {
+    return { mesesConsiderados: 0, mediaMensal: 0, categorias: [], projecaoProximoMes: 0 };
+  }
+  const catTotais: Record<string, number> = {};
+  let granTotal = 0;
+  for (const m of meses) {
+    for (const [cat, v] of Object.entries(porMes[m])) {
+      catTotais[cat] = (catTotais[cat] || 0) + v;
+      granTotal += v;
+    }
+  }
+  const mediaMensal = Math.round((granTotal / n) * 100) / 100;
+  const categorias: CategoriaMedia[] = Object.entries(catTotais)
+    .map(([categoria, total]) => {
+      const media = Math.round((total / n) * 100) / 100;
+      const mesesComGasto = meses.filter((m) => porMes[m][categoria] != null).length;
+      return {
+        categoria,
+        total: Math.round(total * 100) / 100,
+        media,
+        mesesComGasto,
+        pctDaMedia: mediaMensal > 0 ? Math.round((media / mediaMensal) * 10000) / 100 : 0,
+      };
+    })
+    .sort((a, b) => b.media - a.media);
+  return { mesesConsiderados: n, mediaMensal, categorias, projecaoProximoMes: mediaMensal };
+}
+
+// ---------------------------------------------------------------------------
 // KPIs do mês: saldo livre projetado, taxa de poupança, % despesas essenciais.
 // ---------------------------------------------------------------------------
 export interface MonthlyKpis {
