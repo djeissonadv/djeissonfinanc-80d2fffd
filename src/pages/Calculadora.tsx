@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Home, Table2, ArrowDownUp, BarChart3, Save, FolderOpen, Trash2, Plus } from 'lucide-react';
+import { Home, Table2, ArrowDownUp, BarChart3, Save, FolderOpen, Trash2, Plus, Wallet } from 'lucide-react';
+import { FolgaMensalTab } from '@/components/calculadora/FolgaMensalTab';
 import { ViabilidadeTab } from '@/components/calculadora/ViabilidadeTab';
 import { AmortizacaoTab } from '@/components/calculadora/AmortizacaoTab';
 import { SimuladorAmortizacaoTab } from '@/components/calculadora/SimuladorAmortizacaoTab';
@@ -287,8 +288,12 @@ export default function CalculadoraPage() {
         )}
       </div>
 
-      <Tabs defaultValue="viabilidade" className="w-full">
+      <Tabs defaultValue="folga" className="w-full">
         <TabsList className="w-full">
+          <TabsTrigger value="folga" className="flex-1 gap-1.5">
+            <Wallet className="h-4 w-4" />
+            Cabe no mês?
+          </TabsTrigger>
           <TabsTrigger value="viabilidade" className="flex-1 gap-1.5">
             <Home className="h-4 w-4" />
             Viabilidade
@@ -306,6 +311,10 @@ export default function CalculadoraPage() {
             Cenários
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="folga" className="mt-4">
+          <FolgaMensalTab />
+        </TabsContent>
 
         <TabsContent value="viabilidade" className="mt-4">
           <ViabilidadeTab params={params} onChange={handleChange} />
