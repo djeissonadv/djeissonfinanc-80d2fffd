@@ -271,7 +271,7 @@ export default function PlanejamentoPage() {
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6 animate-fade-in pb-8">
+    <div className="space-y-5 animate-fade-in pb-8">
 
       {/* Header */}
       <div className="flex items-center justify-between">

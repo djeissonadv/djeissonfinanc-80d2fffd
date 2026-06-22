@@ -289,13 +289,18 @@ export default function DashboardPage() {
       return acc;
     }, {} as Record<string, { total: number; essencial: boolean; color: string }>) || {};
 
+  // Base ÚNICA pro ranking e pro essenciais: soma de TODAS as despesas do mês
+  // (mesmas que alimentam as categorias). Antes o % usava totalDespesas (só
+  // realizado) com numerador incluindo pendentes → os % não fechavam 100%.
+  const totalDespesasMes = Object.values(categorias).reduce((s, c) => s + c.total, 0);
+
   const categoryRanking = Object.entries(categorias)
-    .map(([cat, { total, essencial, color }]) => ({ cat, total, essencial, color, pct: totalDespesas > 0 ? (total / totalDespesas) * 100 : 0 }))
+    .map(([cat, { total, essencial, color }]) => ({ cat, total, essencial, color, pct: totalDespesasMes > 0 ? (total / totalDespesasMes) * 100 : 0 }))
     .sort((a, b) => b.total - a.total);
 
   const totalEssencial = transacoesMes?.filter(t => t.tipo === 'despesa' && t.essencial).reduce((s, t) => s + Number(t.valor), 0) || 0;
-  const totalNaoEssencial = totalDespesas - totalEssencial;
-  const pctEssencial = totalDespesas > 0 ? (totalEssencial / totalDespesas) * 100 : 0;
+  const totalNaoEssencial = Math.max(0, totalDespesasMes - totalEssencial);
+  const pctEssencial = totalDespesasMes > 0 ? (totalEssencial / totalDespesasMes) * 100 : 0;
 
   const [faturaDrawer, setFaturaDrawer] = useState<{ open: boolean; cardId: string; cardName: string }>({ open: false, cardId: '', cardName: '' });
 

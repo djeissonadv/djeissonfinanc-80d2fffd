@@ -335,7 +335,7 @@ export function computeMonthlyKpis(
     else if (t.tipo === 'despesa') {
       despesa += Number(t.valor);
       if (t.essencial) essencial += Number(t.valor);
-      if (t.parcela_atual && t.parcela_total) {
+      if (t.parcela_atual != null && t.parcela_total != null) {
         parcelasMes += 1;
         valorParcelas += Number(t.valor);
       }

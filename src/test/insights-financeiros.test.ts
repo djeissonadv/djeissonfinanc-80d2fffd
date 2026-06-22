@@ -54,6 +54,21 @@ describe('gerarInsights', () => {
     expect(r.find(i => i.id === 'sobra-negativa')).toBeTruthy();
   });
 
+  it('crédito-essencial usa só a janela de 6 meses (não infla com histórico longo)', () => {
+    const txs: any[] = [];
+    // 8 meses de juros (pra disparar a regra) + 8 meses de Alimentação no crédito 400/mês
+    for (let m = 1; m <= 8; m++) {
+      const mes = `2026-${String(m).padStart(2, '0')}`;
+      txs.push(tx({ data: `${mes}-05`, categoria: 'Operação bancária', valor: 100 }));
+      txs.push(tx({ data: `${mes}-10`, categoria: 'Alimentação', valor: 400, conta_id: 'cartao1' }));
+    }
+    const r = gerarInsights(txs, ['cartao1'], '2026-09-10'); // corrente = setembro
+    const dica = r.find(i => i.id === 'credito-essencial');
+    expect(dica).toBeTruthy();
+    // 6 meses × 400 = 2400, ÷ 6 = 400 (não 3200/6 = 533 do bug)
+    expect(dica!.valor).toBe(400);
+  });
+
   it('alertas vêm antes de dicas na ordenação', () => {
     const txs = [
       tx({ data: '2026-01-10', categoria: 'Operação bancária', valor: 200 }),

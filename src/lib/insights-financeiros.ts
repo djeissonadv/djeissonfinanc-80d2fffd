@@ -30,14 +30,17 @@ export function gerarInsights(
   const cartoes = new Set(cartaoIds);
   const mesAtual = (todayIso || '').substring(0, 7);
 
-  // Meses completos (exclui o corrente) — base das médias.
-  const mesesCompletos = new Set<string>();
+  // Janela das médias: os ÚLTIMOS 6 meses COMPLETOS (exclui o corrente).
+  // Numerador e denominador precisam usar a MESMA janela — senão somar sobre
+  // todo o histórico e dividir por 6 infla a média.
+  const completos = new Set<string>();
   for (const t of txs) {
     if (t.ignorar_dashboard) continue;
     const k = monthKey(t);
-    if (k < mesAtual) mesesCompletos.add(k);
+    if (k < mesAtual) completos.add(k);
   }
-  const nMeses = Math.max(1, Math.min(6, mesesCompletos.size));
+  const mesesJanela = new Set([...completos].sort().slice(-6));
+  const nMeses = Math.max(1, mesesJanela.size);
 
   // ── 1) Juros e encargos: o vazamento mais fácil de cortar ──────────────
   const jurosMedia = gm.categorias
@@ -63,7 +66,7 @@ export function gerarInsights(
       if (t.ignorar_dashboard || t.tipo !== 'despesa') continue;
       if (!cartoes.has(t.conta_id)) continue;
       const k = monthKey(t);
-      if (k >= mesAtual) continue;
+      if (!mesesJanela.has(k)) continue; // mesma janela do divisor (nMeses)
       const cat = t.categoria || 'Outros';
       if (essenciais.includes(cat)) porCatCredito[cat] = (porCatCredito[cat] || 0) + Number(t.valor);
     }
@@ -85,7 +88,7 @@ export function gerarInsights(
   for (const t of txs) {
     if (t.ignorar_dashboard) continue;
     const k = monthKey(t);
-    if (k >= mesAtual) continue;
+    if (!mesesJanela.has(k)) continue; // mesma janela de 6 meses
     if (!porMes[k]) porMes[k] = { receita: 0, despesa: 0 };
     if (t.tipo === 'receita') porMes[k].receita += Number(t.valor);
     else if (t.tipo === 'despesa') porMes[k].despesa += Number(t.valor);
