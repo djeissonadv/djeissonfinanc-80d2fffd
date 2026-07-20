@@ -314,116 +314,116 @@ export default function DashboardPage() {
     );
   }
 
+  const nomeMesAtual = `${getMonthName(month)} de ${year}`;
+
   return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+    <div className="space-y-8 animate-fade-in">
+      <div className="flex items-start justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">{nomeMesAtual}</p>
+        </div>
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={() => setManualOpen(true)}
-            className="gap-1.5 rounded-full"
-          >
-            <Plus className="h-4 w-4" />
-            Novo Lançamento
-          </Button>
           <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
+          <Button size="sm" onClick={() => setManualOpen(true)} className="h-8 gap-1.5">
+            <Plus className="h-4 w-4" />
+            Lançar
+          </Button>
         </div>
       </div>
 
-      {/* HERO — "Disponível pra gastar hoje" como headline (resposta direta à
-          pergunta-âncora). Saldo atual fica em pill secundária.
-          Se user não cadastrou conta corrente, mostra CTA em vez de R$ 0,00. */}
-      <Card className="overflow-hidden">
-        <CardContent className="p-5 md:p-6">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div className="space-y-1">
-              {semContaDebito ? (
-                <>
-                  <p className="text-sm text-muted-foreground uppercase tracking-wider">Saldo</p>
-                  <p className="num-hero text-3xl md:text-4xl text-muted-foreground">—</p>
-                  <p className="text-sm text-muted-foreground">
-                    Você ainda não cadastrou uma conta corrente.{' '}
-                    <button
-                      type="button"
-                      onClick={() => navigate('/contas')}
-                      className="text-primary underline hover:no-underline"
-                    >
-                      Cadastrar agora →
-                    </button>
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Disponível pra gastar</p>
-                  <p className={`num-hero text-4xl md:text-5xl ${(disponivelHoje ?? 0) >= 0 ? 'text-primary' : 'text-destructive'}`}>
-                    {formatCurrency(disponivelHoje ?? 0)}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Saldo atual de <span className="tabular font-medium text-foreground">{formatCurrency(saldoAtual ?? 0)}</span>
-                    {impactoVenc.impactoLiquido !== 0 && (
-                      <> {impactoVenc.impactoLiquido < 0 ? '−' : '+'} {formatCurrency(Math.abs(impactoVenc.impactoLiquido))} previstos em 30d</>
-                    )}
-                  </p>
-                </>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-3">
+      {/* HERO — sem card: o número É o design. Envolvê-lo numa caixa só
+          adiciona moldura e o iguala às outras seções; solto na página ele
+          domina sozinho, que é o papel dele. Responde a pergunta-âncora
+          ("quanto posso gastar?") antes de qualquer outra coisa. */}
+      <section>
+        {semContaDebito ? (
+          <>
+            <p className="text-2xs uppercase tracking-[0.12em] text-muted-foreground font-medium">Saldo</p>
+            <p className="num-hero text-4xl md:text-5xl mt-1.5 text-muted-foreground">—</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Você ainda não cadastrou uma conta corrente.{' '}
               <button
-                onClick={() => navigate('/transacoes?tipo=receita')}
-                className="pill"
+                type="button"
+                onClick={() => navigate('/contas')}
+                className="text-primary underline hover:no-underline"
               >
-                <span className="h-2 w-2 rounded-full bg-primary" />
-                <span className="text-xs text-muted-foreground">Receitas</span>
-                <span className="text-sm font-semibold tabular">{formatCurrency(totalReceitas)}</span>
-                {varReceitas != null && Math.abs(varReceitas) >= 1 && (
-                  <span className={`text-[10px] font-medium tabular ${varReceitas >= 0 ? 'text-success' : 'text-destructive'}`}>
-                    {varReceitas >= 0 ? '↑' : '↓'} {Math.abs(varReceitas).toFixed(0)}%
-                  </span>
-                )}
+                Cadastrar agora →
               </button>
-              <button
-                onClick={() => navigate('/transacoes?tipo=despesa')}
-                className="pill"
-              >
-                <span className="h-2 w-2 rounded-full bg-destructive" />
-                <span className="text-xs text-muted-foreground">Despesas</span>
-                <span className="text-sm font-semibold tabular">{formatCurrency(totalDespesas)}</span>
-                {varDespesas != null && Math.abs(varDespesas) >= 1 && (
-                  <span className={`text-[10px] font-medium tabular ${varDespesas <= 0 ? 'text-success' : 'text-destructive'}`}>
-                    {varDespesas >= 0 ? '↑' : '↓'} {Math.abs(varDespesas).toFixed(0)}%
-                  </span>
-                )}
-              </button>
-              {(totalDespesasPendentes > 0 || totalReceitasPendentes > 0) && (
-                <button
-                  onClick={() => navigate('/transacoes?status=pendente')}
-                  className="pill"
-                  title="Lançamentos com status pendente neste mês"
-                >
-                  <span className="h-2 w-2 rounded-full bg-warning" />
-                  <span className="text-xs text-muted-foreground">Pendentes</span>
-                  <span className="text-sm font-semibold tabular">
-                    {totalReceitasPendentes > 0 && `+${formatCurrency(totalReceitasPendentes)}`}
-                    {totalReceitasPendentes > 0 && totalDespesasPendentes > 0 && ' / '}
-                    {totalDespesasPendentes > 0 && `-${formatCurrency(totalDespesasPendentes)}`}
-                  </span>
-                </button>
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-2xs uppercase tracking-[0.12em] text-muted-foreground font-medium">
+              Disponível pra gastar
+            </p>
+            <p className={`num-hero text-5xl md:text-6xl mt-1.5 ${(disponivelHoje ?? 0) >= 0 ? 'text-primary' : 'text-destructive'}`}>
+              {formatCurrency(disponivelHoje ?? 0)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Saldo atual de <span className="tabular font-medium text-foreground">{formatCurrency(saldoAtual ?? 0)}</span>
+              {impactoVenc.impactoLiquido !== 0 && (
+                <> {impactoVenc.impactoLiquido < 0 ? '−' : '+'} {formatCurrency(Math.abs(impactoVenc.impactoLiquido))} previstos em 30d</>
               )}
-              {(totalAPagar > 0 || totalAReceber > 0) && (
-                <button
-                  onClick={() => navigate('/a-pagar-receber')}
-                  className="pill"
-                >
-                  <span className="h-2 w-2 rounded-full bg-warning" />
-                  <span className="text-xs text-muted-foreground">A pagar/receber</span>
-                  <span className="text-sm font-semibold tabular">{formatCurrency(totalAPagar + totalAReceber)}</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+            </p>
+
+            {/* Proporção entrou/saiu — conta a história do mês numa linha só,
+                sem exigir que o olho compare dois números. */}
+            {(totalReceitas > 0 || totalDespesas > 0) && (
+              <div className="mt-4 flex h-1 rounded-full overflow-hidden bg-secondary/60">
+                <div
+                  className="bg-success"
+                  style={{ width: `${(totalReceitas / Math.max(1, totalReceitas + totalDespesas)) * 100}%` }}
+                />
+                <div
+                  className="bg-destructive/70"
+                  style={{ width: `${(totalDespesas / Math.max(1, totalReceitas + totalDespesas)) * 100}%` }}
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Resumos clicáveis — sem pílula: fundo, borda e blur em cada um
+            criavam quatro blocos competindo com o número herói. Ponto de cor
+            + rótulo já identificam, e o hover dá o alvo de clique. */}
+        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+          <ResumoItem
+            cor="bg-success"
+            rotulo="Entrou"
+            valor={formatCurrency(totalReceitas)}
+            variacao={varReceitas}
+            variacaoBoaSeSobe
+            onClick={() => navigate('/transacoes?tipo=receita')}
+          />
+          <ResumoItem
+            cor="bg-destructive/70"
+            rotulo="Saiu"
+            valor={formatCurrency(totalDespesas)}
+            variacao={varDespesas}
+            onClick={() => navigate('/transacoes?tipo=despesa')}
+          />
+          {(totalDespesasPendentes > 0 || totalReceitasPendentes > 0) && (
+            <ResumoItem
+              cor="bg-warning"
+              rotulo="Pendentes"
+              valor={[
+                totalReceitasPendentes > 0 ? `+${formatCurrency(totalReceitasPendentes)}` : null,
+                totalDespesasPendentes > 0 ? `−${formatCurrency(totalDespesasPendentes)}` : null,
+              ].filter(Boolean).join(' / ')}
+              onClick={() => navigate('/transacoes?status=pendente')}
+            />
+          )}
+          {(totalAPagar > 0 || totalAReceber > 0) && (
+            <ResumoItem
+              cor="bg-warning"
+              rotulo="A pagar/receber"
+              valor={formatCurrency(totalAPagar + totalAReceber)}
+              onClick={() => navigate('/a-pagar-receber')}
+            />
+          )}
+        </div>
+      </section>
 
       {/* Faturas dos cartões — logo abaixo do "Disponível pra gastar", porque
           é o que mais pesa no dia a dia (resposta direta a "quanto devo nos
@@ -448,47 +448,53 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Métricas secundárias em grid de 3 */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="cursor-pointer hover-lift group" onClick={() => navigate('/transacoes?tipo=despesa')}>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Gastos do mês</p>
-            <p className="num-display text-2xl md:text-3xl text-foreground">{formatCurrency(totalDespesasComPrev)}</p>
-            {totalDespesasPendentes > 0 && (
-              <p className="text-[11px] text-muted-foreground tabular mt-0.5">
-                {formatCurrency(totalDespesas)} pago · +{formatCurrency(totalDespesasPendentes)} previsto
-              </p>
-            )}
-            <div className="mt-2.5 space-y-1.5">
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>{percentGasto.toFixed(0)}% da receita</span>
-                <span className="tabular">{formatCurrency(totalReceitasComPrev)} entr.</span>
-              </div>
-              <Progress value={Math.min(percentGasto, 100)} className="h-1.5" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Disponível no mês</p>
-            <p className={`num-display text-2xl md:text-3xl ${disponivel >= 0 ? 'text-primary' : 'text-destructive'}`}>
-              {formatCurrency(disponivel)}
+      {/* Métricas do mês — faixa dividida por hairlines em vez de 3 cards.
+          Três caixas lado a lado pra três números criam 3 bordas, 3 fundos e
+          3 sombras pra informação que é a mesma coisa vista de ângulos
+          diferentes. A faixa agrupa visualmente e some como moldura. */}
+      <section className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border/60 border-y border-border/60">
+        <button
+          type="button"
+          onClick={() => navigate('/transacoes?tipo=despesa')}
+          className="text-left py-3 sm:pr-4 hover:bg-secondary/25 transition-colors sm:first:pl-0 px-0 sm:px-4"
+        >
+          <p className="text-2xs uppercase tracking-wider text-muted-foreground">Gastos do mês</p>
+          <p className="num-display text-2xl mt-1 tabular">{formatCurrency(totalDespesasComPrev)}</p>
+          {totalDespesasPendentes > 0 && (
+            <p className="text-2xs text-muted-foreground tabular mt-0.5">
+              {formatCurrency(totalDespesas)} pago · +{formatCurrency(totalDespesasPendentes)} previsto
             </p>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {(saldoAnterior || 0) >= 0 ? '+' : ''}{formatCurrency(saldoAnterior || 0)} do mês anterior
+          )}
+          <div className="mt-2 space-y-1">
+            <Progress value={Math.min(percentGasto, 100)} className="h-1" />
+            <p className="text-2xs text-muted-foreground">
+              {percentGasto.toFixed(0)}% da receita
             </p>
-          </CardContent>
-        </Card>
-        <Card className="cursor-pointer hover-lift" onClick={() => navigate('/transacoes')}>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Transações</p>
-            <p className="num-display text-2xl md:text-3xl text-foreground">{transacoesMes?.length || 0}</p>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {transacoesMes?.filter(t => t.tipo === 'receita').length || 0} entradas · {transacoesMes?.filter(t => t.tipo === 'despesa').length || 0} saídas
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </button>
+
+        <div className="py-3 px-0 sm:px-4">
+          <p className="text-2xs uppercase tracking-wider text-muted-foreground">Disponível no mês</p>
+          <p className={`num-display text-2xl mt-1 tabular ${disponivel >= 0 ? 'text-foreground' : 'text-destructive'}`}>
+            {formatCurrency(disponivel)}
+          </p>
+          <p className="text-2xs text-muted-foreground mt-0.5">
+            {(saldoAnterior || 0) >= 0 ? '+' : ''}{formatCurrency(saldoAnterior || 0)} do mês anterior
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => navigate('/transacoes')}
+          className="text-left py-3 px-0 sm:px-4 sm:pr-0 hover:bg-secondary/25 transition-colors"
+        >
+          <p className="text-2xs uppercase tracking-wider text-muted-foreground">Transações</p>
+          <p className="num-display text-2xl mt-1 tabular">{transacoesMes?.length || 0}</p>
+          <p className="text-2xs text-muted-foreground mt-0.5">
+            {transacoesMes?.filter(t => t.tipo === 'receita').length || 0} entradas · {transacoesMes?.filter(t => t.tipo === 'despesa').length || 0} saídas
+          </p>
+        </button>
+      </section>
 
       {/* Correção one-time: lançamentos rápidos antigos com data=hoje em vez do
           mês da fatura. Some sozinho quando não há mais o que corrigir. */}
@@ -663,5 +669,47 @@ export default function DashboardPage() {
         onOpenChange={setManualOpen}
       />
     </div>
+  );
+}
+
+/**
+ * Item de resumo do herói (Entrou / Saiu / Pendentes / A pagar-receber).
+ *
+ * Substituiu a classe `.pill` — que dava fundo, borda e blur a cada item.
+ * Quatro pílulas ao lado do número principal viravam quatro blocos
+ * competindo com ele. Aqui o ponto de cor identifica e o hover marca o alvo
+ * de clique, sem moldura.
+ */
+function ResumoItem({
+  cor, rotulo, valor, variacao, variacaoBoaSeSobe, onClick,
+}: {
+  cor: string;
+  rotulo: string;
+  valor: string;
+  /** Variação % vs mês anterior. */
+  variacao?: number | null;
+  /** Em receita, subir é bom; em despesa, é ruim. */
+  variacaoBoaSeSobe?: boolean;
+  onClick: () => void;
+}) {
+  const mostraVar = variacao != null && Math.abs(variacao) >= 1;
+  const subiu = (variacao ?? 0) >= 0;
+  const bom = variacaoBoaSeSobe ? subiu : !subiu;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex items-center gap-2 text-left -mx-1.5 px-1.5 py-0.5 rounded-md hover:bg-secondary/40 transition-colors"
+    >
+      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${cor}`} />
+      <span className="text-xs text-muted-foreground">{rotulo}</span>
+      <span className="text-sm font-medium tabular">{valor}</span>
+      {mostraVar && (
+        <span className={`text-2xs tabular ${bom ? 'text-success' : 'text-destructive'}`}>
+          {subiu ? '↑' : '↓'}{Math.abs(variacao!).toFixed(0)}%
+        </span>
+      )}
+    </button>
   );
 }

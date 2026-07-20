@@ -43,8 +43,12 @@
     --destructive: 0 75% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 75 100% 55%;
-    --success-foreground: 0 0% 8%;
+    /* Verde distinto do lima da marca. Antes success era 75 100% 55% — a
+       MESMA cor do --primary. Com isso o número herói, o botão primário e
+       toda receita brilhavam igual: três coisas gritando o mesmo tom, e
+       nenhuma vencendo. Agora lima = marca/ação, verde = dinheiro entrando. */
+    --success: 152 60% 45%;
+    --success-foreground: 0 0% 100%;
 
     --warning: 38 100% 58%;
     --warning-foreground: 0 0% 8%;
@@ -108,8 +112,8 @@
     --destructive: 0 75% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 75 100% 55%;
-    --success-foreground: 0 0% 5%;
+    --success: 152 60% 48%;
+    --success-foreground: 0 0% 100%;
 
     --warning: 38 100% 58%;
     --warning-foreground: 0 0% 5%;

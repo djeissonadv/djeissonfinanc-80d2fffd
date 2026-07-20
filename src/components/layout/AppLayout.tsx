@@ -57,14 +57,21 @@ export default function AppLayout() {
         <div className="flex-1 flex flex-col min-w-0">
           <AppHeader />
           <main className="flex-1 p-4 md:p-6 overflow-auto">
-            {/* ErrorBoundary com key={pathname} reseta o erro a cada
-                troca de rota. key também dispara a animação page-enter
-                ao mudar de rota (React re-cria o nó). */}
-            <ErrorBoundary key={location.pathname}>
-              <div className="page-enter">
-                <Outlet />
-              </div>
-            </ErrorBoundary>
+            {/* Largura máxima: sem ela o conteúdo esticava até a borda da
+                tela. Num monitor wide, uma tabela de transações com 2000px
+                de largura força o olho a varrer o monitor inteiro pra ligar
+                a descrição ao valor — e o cabeçalho da página fica perdido
+                num canto. 1280px mantém a linha de leitura confortável. */}
+            <div className="mx-auto w-full max-w-[1280px]">
+              {/* ErrorBoundary com key={pathname} reseta o erro a cada
+                  troca de rota. key também dispara a animação page-enter
+                  ao mudar de rota (React re-cria o nó). */}
+              <ErrorBoundary key={location.pathname}>
+                <div className="page-enter">
+                  <Outlet />
+                </div>
+              </ErrorBoundary>
+            </div>
           </main>
         </div>
         <FloatingActionButton />
