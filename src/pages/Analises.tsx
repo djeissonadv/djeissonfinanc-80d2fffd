@@ -26,6 +26,7 @@ import {
   buildCategoryComposition,
   buildGastosMedios,
   analisePicosGastos,
+  mesesComGasto,
   computeMonthlyKpis,
   comparePeriods,
 } from '@/lib/analytics-engine';
@@ -148,12 +149,52 @@ export default function AnalisesPage() {
     [allTransactions, todayIso],
   );
 
-  // Maiores gastos dos últimos 4 meses + meses fora da curva. Janela curta de
-  // propósito: 4 meses é o horizonte em que dá pra lembrar do que aconteceu e
-  // agir em cima — 12 meses viraria média morta.
+  // ----- Maiores gastos: período escolhido pelo usuário -----
+  // Janela curta por padrão (4 meses completos): é o horizonte em que dá pra
+  // lembrar do que aconteceu e agir. Mas o range é editável e persistido —
+  // um mês com importação incompleta distorce a média e precisa poder sair.
+  const mesesDisp = useMemo(
+    () => (allTransactions ? mesesComGasto(allTransactions) : []),
+    [allTransactions],
+  );
+
+  const [rangePicos, setRangePicos] = useState<{ inicio: string; fim: string } | null>(() => {
+    try {
+      const raw = localStorage.getItem('analises_picos_range');
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p?.inicio && p?.fim) return p;
+      }
+    } catch { /* localStorage indisponível — cai no default */ }
+    return null;
+  });
+
+  // Default: últimos 4 meses com dado, excluindo o corrente (incompleto).
+  const rangeEfetivo = useMemo(() => {
+    if (!mesesDisp.length) return null;
+    const mesAtual = todayIso.substring(0, 7);
+    const completos = mesesDisp.filter((m) => m < mesAtual);
+    const base = completos.length ? completos : mesesDisp;
+    const padrao = { inicio: base.slice(-4)[0], fim: base[base.length - 1] };
+    if (!rangePicos) return padrao;
+    // Range salvo pode apontar pra mês que não existe mais nos dados.
+    const inicio = mesesDisp.includes(rangePicos.inicio) ? rangePicos.inicio : padrao.inicio;
+    const fim = mesesDisp.includes(rangePicos.fim) ? rangePicos.fim : padrao.fim;
+    return inicio <= fim ? { inicio, fim } : padrao;
+  }, [mesesDisp, rangePicos, todayIso]);
+
+  const aplicarRangePicos = (inicio: string, fim: string) => {
+    setRangePicos({ inicio, fim });
+    try {
+      localStorage.setItem('analises_picos_range', JSON.stringify({ inicio, fim }));
+    } catch { /* sem persistência, segue só em memória */ }
+  };
+
   const picos = useMemo(
-    () => (allTransactions ? analisePicosGastos(allTransactions, 4, todayIso) : null),
-    [allTransactions, todayIso],
+    () => (allTransactions && rangeEfetivo
+      ? analisePicosGastos(allTransactions, 4, todayIso, rangeEfetivo)
+      : null),
+    [allTransactions, todayIso, rangeEfetivo],
   );
 
   // Insights determinísticos: boas práticas × gastos reais.
@@ -308,9 +349,14 @@ export default function AnalisesPage() {
       </div>
 
       {/* Maiores gastos dos últimos 4 meses + meses fora da curva */}
-      {picos && (
+      {picos && rangeEfetivo && (
         <PicosGastos
           data={picos}
+          transactions={allTransactions || []}
+          mesesDisponiveis={mesesDisp}
+          inicio={rangeEfetivo.inicio}
+          fim={rangeEfetivo.fim}
+          onRangeChange={aplicarRangePicos}
           onCategoriaClick={(cat, mes) => {
             const params = new URLSearchParams({ categoria: cat, tipo: 'despesa' });
             if (mes) params.set('mes', mes);

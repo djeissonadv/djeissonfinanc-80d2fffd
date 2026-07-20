@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { analisePicosGastos } from '@/lib/analytics-engine';
+import {
+  analisePicosGastos, mesesComGasto, lancamentosPorMes,
+} from '@/lib/analytics-engine';
 
 function tx(over: Partial<any> = {}): any {
   return {
@@ -161,11 +163,82 @@ describe('analisePicosGastos', () => {
     expect(r.excessoTotal).toBe(0);
   });
 
+  it('range explícito manda — permite cortar mês incompleto fora', () => {
+    const txs = [
+      tx({ data: '2026-03-10', valor: 1000 }),
+      tx({ data: '2026-04-10', valor: 1000 }),
+      tx({ data: '2026-05-10', valor: 1000 }),
+      tx({ data: '2026-06-10', valor: 200 }), // mês com importação incompleta
+    ];
+    // Sem range: junho entra e derruba a média (3200/4 = 800)
+    expect(analisePicosGastos(txs, 4, HOJE).mediaMensal).toBe(800);
+    // Com range cortando junho: média volta pro real
+    const r = analisePicosGastos(txs, 4, HOJE, { inicio: '2026-03', fim: '2026-05' });
+    expect(r.mediaMensal).toBe(1000);
+    expect(r.meses).toEqual(['2026-03', '2026-04', '2026-05']);
+  });
+
+  it('range explícito pode incluir o mês corrente se o usuário quiser', () => {
+    const txs = [
+      tx({ data: '2026-06-10', valor: 500 }),
+      tx({ data: '2026-07-10', valor: 700 }), // corrente
+    ];
+    const semRange = analisePicosGastos(txs, 4, HOJE);
+    expect(semRange.meses).toEqual(['2026-06']); // corrente excluído por padrão
+    const comRange = analisePicosGastos(txs, 4, HOJE, { inicio: '2026-06', fim: '2026-07' });
+    expect(comRange.meses).toEqual(['2026-06', '2026-07']);
+  });
+
   it('mês único na janela não inventa pico (sem baseline pra comparar)', () => {
     const txs = [tx({ data: '2026-06-10', valor: 5000 })];
     const r = analisePicosGastos(txs, 4, HOJE);
     expect(r.mesesConsiderados).toBe(1);
     expect(r.categorias[0].picos).toHaveLength(0);
+  });
+
+  it('mesesComGasto lista os meses com despesa, ordenados', () => {
+    const txs = [
+      tx({ data: '2026-05-10' }),
+      tx({ data: '2026-03-10' }),
+      tx({ data: '2026-03-20' }),
+      tx({ data: '2026-04-10', categoria: 'Pagamento Fatura' }), // interna, fora
+      tx({ data: '2026-06-10', ignorar_dashboard: true }),        // fora
+      tx({ data: '2026-07-10', tipo: 'receita' }),                // fora
+    ];
+    expect(mesesComGasto(txs)).toEqual(['2026-03', '2026-05']);
+  });
+
+  it('lancamentosPorMes bate com o total agregado (mesmo filtro)', () => {
+    const txs = [
+      tx({ data: '2026-03-05', categoria: 'Compras', descricao: 'Tênis', valor: 300 }),
+      tx({ data: '2026-03-20', categoria: 'Compras', descricao: 'Fone', valor: 150, parcela_atual: 2, parcela_total: 6 }),
+      tx({ data: '2026-04-05', categoria: 'Compras', descricao: 'Mesa', valor: 500 }),
+      tx({ data: '2026-03-05', categoria: 'Alimentação', valor: 999 }), // outra categoria
+      tx({ data: '2026-03-05', categoria: 'Compras', valor: 777, ignorar_dashboard: true }), // fora
+    ];
+    const analise = analisePicosGastos(txs, 4, HOJE);
+    const compras = analise.categorias.find(c => c.categoria === 'Compras')!;
+    const det = lancamentosPorMes(txs, 'Compras', analise.meses);
+
+    const somaDetalhe = det.reduce((s, m) => s + m.total, 0);
+    expect(somaDetalhe).toBe(compras.total); // detalhe NUNCA diverge do total
+
+    const marco = det.find(m => m.mes === '2026-03')!;
+    expect(marco.total).toBe(450);
+    // ordenado do maior pro menor
+    expect(marco.itens.map(i => i.descricao)).toEqual(['Tênis', 'Fone']);
+    expect(marco.itens[1].parcela).toBe('2/6');
+  });
+
+  it('lancamentosPorMes ignora meses fora da janela', () => {
+    const txs = [
+      tx({ data: '2026-03-05', categoria: 'Compras', valor: 100 }),
+      tx({ data: '2026-04-05', categoria: 'Compras', valor: 200 }),
+    ];
+    const det = lancamentosPorMes(txs, 'Compras', ['2026-04']);
+    expect(det).toHaveLength(1);
+    expect(det[0].mes).toBe('2026-04');
+    expect(det[0].total).toBe(200);
   });
 
   it('usa mes_competencia quando existe (compra no cartão cai na fatura)', () => {

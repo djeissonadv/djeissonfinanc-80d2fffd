@@ -360,28 +360,61 @@ export interface AnalisePicos {
   excessoTotal: number;         // soma de todos os excessos da janela
 }
 
+/** Filtro único de "gasto que conta" — usado pela análise e pelo drill-down,
+ *  pra que o detalhe nunca divirja do total. */
+export function contaComoGasto(t: TransactionRecord): boolean {
+  if (t.ignorar_dashboard || t.tipo !== 'despesa') return false;
+  return !CATEGORIAS_NAO_GASTO.has(t.categoria || 'Outros');
+}
+
+/**
+ * Meses (YYYY-MM) que têm gasto lançado, em ordem. Alimenta o seletor de
+ * período — o usuário escolhe a janela em vez de aceitar uma fixa, porque um
+ * mês com importação incompleta distorce toda a média.
+ */
+export function mesesComGasto(transactions: TransactionRecord[]): string[] {
+  const set = new Set<string>();
+  for (const t of transactions) if (contaComoGasto(t)) set.add(monthKey(t));
+  return [...set].sort();
+}
+
+export interface RangeMeses {
+  /** YYYY-MM inicial (inclusive). */
+  inicio?: string;
+  /** YYYY-MM final (inclusive). */
+  fim?: string;
+}
+
 export function analisePicosGastos(
   transactions: TransactionRecord[],
   monthsBack = 4,
   todayIso?: string,
+  range?: RangeMeses,
 ): AnalisePicos {
   const mesAtual = (todayIso || '').substring(0, 7);
   // mes -> cat -> { total, parcela }
   const porMesCat: Record<string, Record<string, { total: number; parcela: number }>> = {};
 
   for (const t of transactions) {
-    if (t.ignorar_dashboard || t.tipo !== 'despesa') continue;
+    if (!contaComoGasto(t)) continue;
     const cat = t.categoria || 'Outros';
-    if (CATEGORIAS_NAO_GASTO.has(cat)) continue;
     const k = monthKey(t);
-    if (mesAtual && k >= mesAtual) continue; // mês corrente é incompleto
+    // Range explícito manda; sem ele, exclui o mês corrente (incompleto).
+    if (range?.inicio || range?.fim) {
+      if (range.inicio && k < range.inicio) continue;
+      if (range.fim && k > range.fim) continue;
+    } else if (mesAtual && k >= mesAtual) {
+      continue;
+    }
     const slot = ((porMesCat[k] ||= {})[cat] ||= { total: 0, parcela: 0 });
     const v = Number(t.valor);
     slot.total += v;
     if ((t.parcela_total ?? 0) > 1) slot.parcela += v;
   }
 
-  const meses = Object.keys(porMesCat).sort().slice(-monthsBack);
+  // Com range explícito, respeita a janela escolhida inteira (sem cortar).
+  const todosMeses = Object.keys(porMesCat).sort();
+  const meses = range?.inicio || range?.fim ? todosMeses : todosMeses.slice(-monthsBack);
   const n = meses.length;
   if (n === 0) {
     return {
@@ -466,6 +499,55 @@ export function analisePicosGastos(
     categorias,
     excessoTotal: round2(categorias.reduce((s, c) => s + c.excessoTotal, 0)),
   };
+}
+
+export interface LancamentoDetalhe {
+  data: string;
+  descricao: string;
+  valor: number;
+  parcela: string | null;   // "3/10" quando parcelado
+  essencial: boolean;
+}
+
+export interface MesDetalhe {
+  mes: string;
+  total: number;
+  itens: LancamentoDetalhe[];   // do maior valor pro menor
+}
+
+/**
+ * Lançamentos de uma categoria, agrupados por mês — o "abre e vê" do painel.
+ * Usa o MESMO filtro (contaComoGasto) da agregação, então a soma dos itens
+ * sempre bate com o total mostrado no ranking.
+ */
+export function lancamentosPorMes(
+  transactions: TransactionRecord[],
+  categoria: string,
+  meses: string[],
+): MesDetalhe[] {
+  const janela = new Set(meses);
+  const porMes: Record<string, LancamentoDetalhe[]> = {};
+  for (const t of transactions) {
+    if (!contaComoGasto(t)) continue;
+    if ((t.categoria || 'Outros') !== categoria) continue;
+    const k = monthKey(t);
+    if (!janela.has(k)) continue;
+    (porMes[k] ||= []).push({
+      data: t.data,
+      descricao: t.descricao || '(sem descrição)',
+      valor: Number(t.valor),
+      parcela: t.parcela_atual != null && t.parcela_total != null
+        ? `${t.parcela_atual}/${t.parcela_total}`
+        : null,
+      essencial: !!t.essencial,
+    });
+  }
+  return meses
+    .filter((m) => porMes[m]?.length)
+    .map((mes) => {
+      const itens = porMes[mes].sort((a, b) => b.valor - a.valor);
+      return { mes, total: round2(itens.reduce((s, i) => s + i.valor, 0)), itens };
+    });
 }
 
 function round2(v: number): number {
