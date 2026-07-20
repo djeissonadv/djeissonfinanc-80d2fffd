@@ -25,6 +25,7 @@ import {
   buildMonthlyFlow,
   buildCategoryComposition,
   buildGastosMedios,
+  analisePicosGastos,
   computeMonthlyKpis,
   comparePeriods,
 } from '@/lib/analytics-engine';
@@ -32,6 +33,7 @@ import { KpiHeroStrip } from '@/components/analytics/KpiHeroStrip';
 import { CashflowChart } from '@/components/analytics/CashflowChart';
 import { CategoryComposition } from '@/components/analytics/CategoryComposition';
 import { GastosMedios } from '@/components/analytics/GastosMedios';
+import { PicosGastos } from '@/components/analytics/PicosGastos';
 import { InsightsFinanceiros } from '@/components/analytics/InsightsFinanceiros';
 import { gerarInsights } from '@/lib/insights-financeiros';
 import { TrendsList } from '@/components/analytics/TrendsList';
@@ -143,6 +145,14 @@ export default function AnalisesPage() {
   // Raio-X: médias por categoria dos últimos 6 meses completos + projeção.
   const gastosMedios = useMemo(
     () => (allTransactions ? buildGastosMedios(allTransactions, 6, todayIso) : null),
+    [allTransactions, todayIso],
+  );
+
+  // Maiores gastos dos últimos 4 meses + meses fora da curva. Janela curta de
+  // propósito: 4 meses é o horizonte em que dá pra lembrar do que aconteceu e
+  // agir em cima — 12 meses viraria média morta.
+  const picos = useMemo(
+    () => (allTransactions ? analisePicosGastos(allTransactions, 4, todayIso) : null),
     [allTransactions, todayIso],
   );
 
@@ -296,6 +306,18 @@ export default function AnalisesPage() {
         </div>
         <CategoryComposition slices={composition} description={`Despesas do mês ${billingMonth} (clique pra ver lançamentos)`} drillDownMes={billingMonth} />
       </div>
+
+      {/* Maiores gastos dos últimos 4 meses + meses fora da curva */}
+      {picos && (
+        <PicosGastos
+          data={picos}
+          onCategoriaClick={(cat, mes) => {
+            const params = new URLSearchParams({ categoria: cat, tipo: 'despesa' });
+            if (mes) params.set('mes', mes);
+            navigate(`/transacoes?${params.toString()}`);
+          }}
+        />
+      )}
 
       {/* Raio-X: média por categoria + projeção do próximo mês */}
       {gastosMedios && (

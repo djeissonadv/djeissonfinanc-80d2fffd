@@ -301,6 +301,185 @@ export function reposicaoParcelasNovas(
 }
 
 // ---------------------------------------------------------------------------
+// Análise de picos: maiores gastos numa janela curta (default 4 meses) com
+// detecção de meses fora da curva.
+//
+// Detecção por BASELINE LEAVE-ONE-OUT com MEDIANA: cada mês é comparado com a
+// mediana dos OUTROS meses da janela.
+//
+// Duas decisões importantes aqui:
+//  1. Leave-one-out (excluir o próprio mês do baseline) evita que o pico infle
+//     a referência e se esconda. Com N pequeno (4), um mês de R$ 2.000 contra
+//     três de R$ 400 puxa a média geral pra 800 e "parece" só 2,5× a média;
+//     contra os outros (400) ele aparece como 5× — a leitura correta.
+//  2. MEDIANA e não média dos outros: com média, uma série em ALTA CONSTANTE
+//     (218 → 427 → 465 → 496) marca o último mês como pico, porque os meses
+//     iniciais baixos puxam a média pra baixo. Mas isso é tendência, não pico —
+//     e tendência já tem detector próprio (spending-patterns). A mediana ignora
+//     a cauda baixa e só dispara quando o mês realmente destoa dos demais.
+//
+// Um mês é pico quando cumpre as TRÊS condições (evita ruído):
+//   1. valor >= baseline * LIMIAR_PICO  (30% acima do normal)
+//   2. excesso >= PISO_EXCESSO          (R$ 80 — ignora variação trivial)
+//   3. a categoria aparece em >1 mês OU o valor é relevante (gasto pontual alto)
+// ---------------------------------------------------------------------------
+const LIMIAR_PICO = 1.3;   // 30% acima do baseline
+const PISO_EXCESSO = 80;   // R$ — abaixo disso não vale sinalizar
+
+export interface MesValor {
+  mes: string;             // YYYY-MM
+  valor: number;
+  baseline: number;        // média dos OUTROS meses da janela
+  excesso: number;         // valor - baseline (só quando pico; senão 0)
+  acimaDoNormal: boolean;
+}
+
+export type Volatilidade = 'pontual' | 'estavel' | 'variavel' | 'irregular';
+
+export interface CategoriaPico {
+  categoria: string;
+  total: number;           // soma na janela
+  media: number;           // média mensal na janela
+  mediaParcela: number;    // quanto da média é parcela (comprometido)
+  pctParcela: number;      // % da categoria que é parcela
+  mesesComGasto: number;
+  meses: MesValor[];       // série completa da janela (na ordem)
+  picos: MesValor[];       // só os meses fora da curva
+  excessoTotal: number;    // soma dos excessos — "quanto pagou a mais"
+  volatilidade: Volatilidade;
+  pctDoTotal: number;      // % do gasto total da janela
+}
+
+export interface AnalisePicos {
+  meses: string[];              // janela efetiva, ordenada
+  mesesConsiderados: number;
+  totalPeriodo: number;
+  mediaMensal: number;
+  totalPorMes: { mes: string; valor: number }[];
+  categorias: CategoriaPico[];  // ordenadas por total desc
+  excessoTotal: number;         // soma de todos os excessos da janela
+}
+
+export function analisePicosGastos(
+  transactions: TransactionRecord[],
+  monthsBack = 4,
+  todayIso?: string,
+): AnalisePicos {
+  const mesAtual = (todayIso || '').substring(0, 7);
+  // mes -> cat -> { total, parcela }
+  const porMesCat: Record<string, Record<string, { total: number; parcela: number }>> = {};
+
+  for (const t of transactions) {
+    if (t.ignorar_dashboard || t.tipo !== 'despesa') continue;
+    const cat = t.categoria || 'Outros';
+    if (CATEGORIAS_NAO_GASTO.has(cat)) continue;
+    const k = monthKey(t);
+    if (mesAtual && k >= mesAtual) continue; // mês corrente é incompleto
+    const slot = ((porMesCat[k] ||= {})[cat] ||= { total: 0, parcela: 0 });
+    const v = Number(t.valor);
+    slot.total += v;
+    if ((t.parcela_total ?? 0) > 1) slot.parcela += v;
+  }
+
+  const meses = Object.keys(porMesCat).sort().slice(-monthsBack);
+  const n = meses.length;
+  if (n === 0) {
+    return {
+      meses: [], mesesConsiderados: 0, totalPeriodo: 0, mediaMensal: 0,
+      totalPorMes: [], categorias: [], excessoTotal: 0,
+    };
+  }
+
+  // Universo de categorias presentes na janela.
+  const cats = new Set<string>();
+  for (const m of meses) for (const c of Object.keys(porMesCat[m])) cats.add(c);
+
+  const totalPorMes = meses.map((mes) => ({
+    mes,
+    valor: round2(Object.values(porMesCat[mes]).reduce((s, x) => s + x.total, 0)),
+  }));
+  const totalPeriodo = round2(totalPorMes.reduce((s, x) => s + x.valor, 0));
+
+  const categorias: CategoriaPico[] = [...cats].map((categoria) => {
+    // Série na janela — mês sem gasto na categoria conta como 0 (é informação:
+    // significa que naquele mês não houve esse gasto).
+    const valores = meses.map((m) => porMesCat[m][categoria]?.total ?? 0);
+    const total = valores.reduce((s, v) => s + v, 0);
+    const media = total / n;
+    const parcelaTotal = meses.reduce((s, m) => s + (porMesCat[m][categoria]?.parcela ?? 0), 0);
+    const mesesComGasto = valores.filter((v) => v > 0).length;
+
+    const serie: MesValor[] = valores.map((valor, i) => {
+      // baseline leave-one-out: mediana dos OUTROS meses da janela
+      const baseline = n > 1 ? mediana(valores.filter((_, j) => j !== i)) : valor;
+      const excessoBruto = valor - baseline;
+      const acimaDoNormal =
+        n > 1 &&
+        valor > 0 &&
+        excessoBruto >= PISO_EXCESSO &&
+        (baseline === 0 ? true : valor >= baseline * LIMIAR_PICO);
+      return {
+        mes: meses[i],
+        valor: round2(valor),
+        baseline: round2(baseline),
+        excesso: acimaDoNormal ? round2(excessoBruto) : 0,
+        acimaDoNormal,
+      };
+    });
+
+    const picos = serie.filter((s) => s.acimaDoNormal);
+    const excessoTotal = round2(picos.reduce((s, p) => s + p.excesso, 0));
+
+    // Volatilidade pelo coeficiente de variação (desvio / média).
+    let volatilidade: Volatilidade;
+    if (mesesComGasto <= 1 && n > 1) {
+      volatilidade = 'pontual';
+    } else {
+      const variancia = valores.reduce((s, v) => s + (v - media) ** 2, 0) / n;
+      const cv = media > 0 ? Math.sqrt(variancia) / media : 0;
+      volatilidade = cv < 0.25 ? 'estavel' : cv < 0.6 ? 'variavel' : 'irregular';
+    }
+
+    return {
+      categoria,
+      total: round2(total),
+      media: round2(media),
+      mediaParcela: round2(parcelaTotal / n),
+      pctParcela: total > 0 ? round2((parcelaTotal / total) * 100) : 0,
+      mesesComGasto,
+      meses: serie,
+      picos,
+      excessoTotal,
+      volatilidade,
+      pctDoTotal: totalPeriodo > 0 ? round2((total / totalPeriodo) * 100) : 0,
+    };
+  })
+    .filter((c) => c.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  return {
+    meses,
+    mesesConsiderados: n,
+    totalPeriodo,
+    mediaMensal: round2(totalPeriodo / n),
+    totalPorMes,
+    categorias,
+    excessoTotal: round2(categorias.reduce((s, c) => s + c.excessoTotal, 0)),
+  };
+}
+
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
+function mediana(vals: number[]): number {
+  if (vals.length === 0) return 0;
+  const s = [...vals].sort((a, b) => a - b);
+  const meio = Math.floor(s.length / 2);
+  return s.length % 2 !== 0 ? s[meio] : (s[meio - 1] + s[meio]) / 2;
+}
+
+// ---------------------------------------------------------------------------
 // KPIs do mês: saldo livre projetado, taxa de poupança, % despesas essenciais.
 // ---------------------------------------------------------------------------
 export interface MonthlyKpis {
