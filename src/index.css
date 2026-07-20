@@ -56,8 +56,11 @@
     --input: 0 0% 22%;
     --ring: 75 100% 60%;
 
-    /* Cantos generosos — vibe Agrilo (rounded-3xl padrão) */
-    --radius: 1.5rem;
+    /* Raio contido. Era 1.5rem (24px) em TUDO — num botão de 40px de altura
+       isso vira quase pílula, e em card denso deixa a interface inchada,
+       comendo espaço útil nos cantos. 0.75rem dá o mesmo ar suave sem o
+       volume: lg=12px (cards), md=8px (botões/inputs), sm=4px (chips). */
+    --radius: 0.75rem;
 
     --sidebar-background: 0 0% 8%;
     --sidebar-foreground: 0 0% 98%;

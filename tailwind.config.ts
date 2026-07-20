@@ -26,6 +26,13 @@ export default {
         ],
         mono: ["JetBrains Mono", "SF Mono", "ui-monospace", "monospace"],
       },
+      fontSize: {
+        // Degrau abaixo de text-xs (12px). Existe pra matar a fragmentação:
+        // o app tinha 131 tipografias em pixel cru — text-[9px], [10px], [11px]
+        // e [12px] — separadas por 1px e sem regra de quando usar cada uma.
+        // Rótulos/metadados usam este; nada deve ser menor.
+        "2xs": ["0.6875rem", { lineHeight: "0.875rem" }],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
