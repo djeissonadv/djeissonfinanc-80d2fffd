@@ -11,6 +11,7 @@ import {
   BarChart3,
   Landmark,
   CalendarClock,
+  Scale,
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useLocation } from 'react-router-dom';
@@ -31,6 +32,7 @@ const items = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard },
   { title: 'Transações', url: '/transacoes', icon: ArrowLeftRight },
   { title: 'Calculadora', url: '/calculadora', icon: Calculator },
+  { title: 'Cenários', url: '/cenarios', icon: Scale },
   { title: 'Contas', url: '/contas', icon: Wallet },
   { title: 'Projeções', url: '/projecoes', icon: TrendingUp },
   { title: 'Planejamento', url: '/planejamento', icon: ClipboardList },

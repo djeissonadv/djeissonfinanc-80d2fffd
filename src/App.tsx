@@ -7,7 +7,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
 import AppLayout from "@/components/layout/AppLayout";
 import LoginPage from "@/pages/Login";
-import DesignPreviewPage from "@/pages/_DesignPreview";
 import OnboardingPage from "@/pages/Onboarding";
 import DashboardPage from "@/pages/Dashboard";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,6 +25,7 @@ const PlanejamentoPage = lazy(() => import("@/pages/Planejamento"));
 const AnalisesPage = lazy(() => import("@/pages/Analises"));
 const DividasPage = lazy(() => import("@/pages/Dividas"));
 const ContasPagarReceberPage = lazy(() => import("@/pages/ContasPagarReceber"));
+const CenariosPage = lazy(() => import("@/pages/Cenarios"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -48,7 +48,6 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/_design" element={<DesignPreviewPage />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
             <Route element={<AppLayout />}>
               <Route path="/" element={<DashboardPage />} />
@@ -62,6 +61,7 @@ const App = () => (
               <Route path="/analises" element={<Suspense fallback={<RouteFallback />}><AnalisesPage /></Suspense>} />
               <Route path="/dividas" element={<Suspense fallback={<RouteFallback />}><DividasPage /></Suspense>} />
               <Route path="/a-pagar-receber" element={<Suspense fallback={<RouteFallback />}><ContasPagarReceberPage /></Suspense>} />
+              <Route path="/cenarios" element={<Suspense fallback={<RouteFallback />}><CenariosPage /></Suspense>} />
             </Route>
             <Route path="*" element={<Suspense fallback={<RouteFallback />}><NotFound /></Suspense>} />
           </Routes>
