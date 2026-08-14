@@ -1,44 +1,20 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { DollarSign } from 'lucide-react';
-import { emailAutorizado } from '@/lib/auth-allowlist';
 
 /**
- * Login por Google ou e-mail/senha. Sem cadastro (app pessoal, só convidados).
- * A trava de convidados de verdade roda no AuthProvider — aqui é só a porta e
- * a mensagem amigável.
+ * Login só por Google. App pessoal: sem cadastro, sem senha. A primeira
+ * entrada cria a conta sozinha (Supabase); quem pode entrar é decidido pela
+ * lista de convidados, aplicada no AuthProvider (vale pós-redirect do Google).
  */
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const { accessDenied } = useAuth();
-  const navigate = useNavigate();
-
-  const handleEmail = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const mail = email.trim().toLowerCase();
-    if (!emailAutorizado(mail)) {
-      toast({ title: 'Acesso restrito', description: 'Esse e-mail não está na lista de convidados.', variant: 'destructive' });
-      return;
-    }
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: mail, password });
-    if (error) {
-      toast({ title: 'Não entrou', description: 'E-mail ou senha incorretos.', variant: 'destructive' });
-    } else {
-      navigate('/');
-    }
-    setLoading(false);
-  };
 
   const handleGoogle = async () => {
     setLoading(true);
@@ -61,9 +37,9 @@ export default function LoginPage() {
             <DollarSign className="h-6 w-6 text-primary-foreground" />
           </div>
           <CardTitle className="text-xl">FinançasPro</CardTitle>
-          <CardDescription>Entre na sua conta</CardDescription>
+          <CardDescription>Gerencie suas finanças pessoais</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3">
           {accessDenied && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               Esse e-mail não tem acesso. Entre com uma conta convidada.
@@ -75,33 +51,15 @@ export default function LoginPage() {
             onClick={handleGoogle}
             disabled={loading}
             variant="outline"
-            className="w-full h-10 gap-2 text-sm"
+            className="w-full h-11 gap-2 text-sm"
           >
             <GoogleIcon />
-            Entrar com Google
+            {loading ? 'Redirecionando...' : 'Entrar com Google'}
           </Button>
 
-          <div className="flex items-center gap-3">
-            <span className="h-px flex-1 bg-border" />
-            <span className="text-2xs uppercase tracking-wider text-muted-foreground">ou</span>
-            <span className="h-px flex-1 bg-border" />
-          </div>
-
-          <form onSubmit={handleEmail} className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-xs">E-mail</Label>
-              <Input id="email" type="email" autoComplete="email" value={email}
-                onChange={e => setEmail(e.target.value)} required />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="password" className="text-xs">Senha</Label>
-              <Input id="password" type="password" autoComplete="current-password" value={password}
-                onChange={e => setPassword(e.target.value)} required />
-            </div>
-            <Button type="submit" className="w-full h-10" disabled={loading}>
-              {loading ? 'Entrando...' : 'Entrar'}
-            </Button>
-          </form>
+          <p className="text-2xs text-muted-foreground text-center pt-1">
+            Acesso restrito ao proprietário.
+          </p>
         </CardContent>
       </Card>
     </div>
