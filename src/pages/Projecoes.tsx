@@ -267,10 +267,10 @@ export default function ProjecoesPage() {
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <TrendingUp className="h-6 w-6" />
-          Projeções Financeiras
-        </h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Planejar</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">Como você fica nos próximos meses e o que libera quando as parcelas terminam</p>
+        </div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <div className="flex items-center gap-1"><Lock className="h-3 w-3" /> Fixo</div>
           <div className="flex items-center gap-1"><Activity className="h-3 w-3" /> Estimado</div>

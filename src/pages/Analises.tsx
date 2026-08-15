@@ -318,8 +318,8 @@ export default function AnalisesPage() {
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Análises</h1>
-          <p className="text-sm text-muted-foreground">Visão profunda dos últimos 12 meses + IA por Claude</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Gastos</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">Pra onde o dinheiro foi e o que os padrões dizem</p>
         </div>
         <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
       </div>
