@@ -690,6 +690,11 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
         //    manual via botão "Marcar como paga". Mantemos no histórico (auditoria)
         //    mas ignoramos no cálculo de Dashboard/fatura.
         ignorar_dashboard:
+          // Categorias neutras (transferência interna / pagamento de fatura),
+          // inclusive quando o usuário marca NA MÃO na revisão — segue a
+          // categoria final, não só o texto da descrição.
+          categoria === 'Transferência entre contas' ||
+          categoria === 'Pagamento Fatura' ||
           isSaldoAnteriorFatura(t.descricao) ||
           isTransferenciaInterna(t.descricao) ||
           isFaturaPayment(t.descricao) ||
@@ -1153,6 +1158,20 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       }
       setProgress(10);
       const plan = preparedPlan ?? (await buildImportPlan(context.contaId, context.currentUserId));
+
+      // Reaplica categoria a partir do aprendizado: o plano foi montado ANTES
+      // das edições do usuário na revisão. autoCategorizarTransacao já consulta
+      // o aprendido primeiro, então isto faz a correção valer JÁ nesta importação
+      // (e categoria neutra também sai do dashboard).
+      for (const t of plan.newTransactions as any[]) {
+        const cat = autoCategorizarTransacao(t.descricao);
+        if (cat && cat !== t.categoria) {
+          t.categoria = cat;
+          if (cat === 'Transferência entre contas' || cat === 'Pagamento Fatura') {
+            t.ignorar_dashboard = true;
+          }
+        }
+      }
 
       // Clean orphan projections AFTER buildImportPlan succeeds (no CONFLICTS thrown),
       // so projections are preserved if the user needs to resolve conflicts first.

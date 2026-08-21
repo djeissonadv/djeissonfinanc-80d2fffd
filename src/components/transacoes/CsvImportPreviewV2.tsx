@@ -4,10 +4,40 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { CheckCircle2, XCircle, AlertTriangle, RefreshCw, ChevronDown, ChevronRight, Sparkles, ArrowDownLeft } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useEnterSubmit } from '@/hooks/useEnterSubmit';
 import { useState } from 'react';
 import type { ClassifiedTransaction } from '@/lib/csv-parser';
 import { autoCategorizarTransacao } from '@/lib/auto-categorize';
+import { aprenderCategoria } from '@/lib/categoria-aprendida';
+import { CATEGORIAS } from '@/types/database.types';
+
+/**
+ * Categoria editável de uma linha da revisão. Mostra a auto-categoria (com
+ * estrela); ao trocar, o app APRENDE — dessa descrição em diante, usa a
+ * escolha do usuário (inclusive marcar como "Transferência entre contas").
+ * O re-cálculo no confirm faz a escolha valer já nesta importação.
+ */
+function CategoriaCell({ descricao }: { descricao: string }) {
+  const [cat, setCat] = useState<string>(() => autoCategorizarTransacao(descricao) || 'Outros');
+  const [editado, setEditado] = useState(false);
+  return (
+    <div className="flex items-center gap-1">
+      <Select
+        value={cat}
+        onValueChange={(v) => { setCat(v); setEditado(true); aprenderCategoria(descricao, v); }}
+      >
+        <SelectTrigger className="h-7 w-full text-xs px-2"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {CATEGORIAS.map((c) => (
+            <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {!editado && <Sparkles className="h-3 w-3 text-amber-500 shrink-0" />}
+    </div>
+  );
+}
 
 export interface InstallmentGroup {
   descricao: string;
@@ -186,29 +216,19 @@ export function CsvImportPreviewV2({ data, onBack, onConfirm, confirming }: Prop
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {data.simpleTransactions.map((t, i) => {
-                        const autoCat = autoCategorizarTransacao(t.descricao);
-                        return (
-                          <TableRow key={i}>
-                            <TableCell className="text-xs">{formatDate(t.data)}</TableCell>
-                            <TableCell className="text-xs">{t.descricao}</TableCell>
-                            <TableCell className="text-xs">
-                              {autoCat ? (
-                                <span className="flex items-center gap-1">
-                                  <Badge variant="outline" className="text-xs">{autoCat}</Badge>
-                                  <Sparkles className="h-3 w-3 text-amber-500" />
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground">Outros</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-xs text-right font-mono">
-                              {formatCurrency(t.valor)}
-                            </TableCell>
-                            <TableCell className="text-xs">{t.pessoa}</TableCell>
-                          </TableRow>
-                        );
-                      })}
+                      {data.simpleTransactions.map((t, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="text-xs">{formatDate(t.data)}</TableCell>
+                          <TableCell className="text-xs">{t.descricao}</TableCell>
+                          <TableCell className="text-xs">
+                            <CategoriaCell descricao={t.descricao} />
+                          </TableCell>
+                          <TableCell className="text-xs text-right font-mono">
+                            {formatCurrency(t.valor)}
+                          </TableCell>
+                          <TableCell className="text-xs">{t.pessoa}</TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 </CollapsibleContent>
@@ -331,32 +351,22 @@ export function CsvImportPreviewV2({ data, onBack, onConfirm, confirming }: Prop
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {data.ongoingInstallments.map((t, i) => {
-                        const autoCat = autoCategorizarTransacao(t.descricao);
-                        return (
-                          <TableRow key={i}>
-                            <TableCell className="text-xs">{formatDate(t.data)}</TableCell>
-                            <TableCell className="text-xs">{t.descricao}</TableCell>
-                            <TableCell className="text-xs">
-                              {t.parcela_atual}/{t.parcela_total}
-                            </TableCell>
-                            <TableCell className="text-xs">
-                              {autoCat ? (
-                                <span className="flex items-center gap-1">
-                                  <Badge variant="outline" className="text-xs">{autoCat}</Badge>
-                                  <Sparkles className="h-3 w-3 text-amber-500" />
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground">Outros</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-xs text-right font-mono">
-                              {formatCurrency(t.valor)}
-                            </TableCell>
-                            <TableCell className="text-xs">{t.pessoa}</TableCell>
-                          </TableRow>
-                        );
-                      })}
+                      {data.ongoingInstallments.map((t, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="text-xs">{formatDate(t.data)}</TableCell>
+                          <TableCell className="text-xs">{t.descricao}</TableCell>
+                          <TableCell className="text-xs">
+                            {t.parcela_atual}/{t.parcela_total}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            <CategoriaCell descricao={t.descricao} />
+                          </TableCell>
+                          <TableCell className="text-xs text-right font-mono">
+                            {formatCurrency(t.valor)}
+                          </TableCell>
+                          <TableCell className="text-xs">{t.pessoa}</TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 </CollapsibleContent>

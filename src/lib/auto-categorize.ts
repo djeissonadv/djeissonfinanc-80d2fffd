@@ -9,6 +9,7 @@
  */
 
 import { CATEGORIAS_CONFIG } from '@/types/database.types';
+import { getCategoriaAprendida } from '@/lib/categoria-aprendida';
 
 interface CategoriaRule {
   patterns: string[];
@@ -200,6 +201,11 @@ function normalizeForMatch(desc: string): string {
  * Returns category name or null if no match.
  */
 export function autoCategorizarTransacao(descricao: string): string | null {
+  // Aprendizado do usuário tem prioridade máxima: se ele já corrigiu essa
+  // descrição na revisão do import, respeita a escolha dele acima das regras.
+  const aprendida = getCategoriaAprendida(descricao);
+  if (aprendida) return aprendida;
+
   const normalized = normalizeForMatch(descricao);
   // Also create a version without special chars for matching patterns that had * or .
   const normalizedClean = normalized.replace(/[^A-Z0-9 ]/g, '').replace(/\s{2,}/g, ' ').trim();
