@@ -120,6 +120,9 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [fileType, setFileType] = useState<"csv" | "ofx" | "pdf" | null>(null);
+  // Fila de importação: usuário arrasta vários arquivos e confere um a um.
+  const [queue, setQueue] = useState<File[]>([]);
+  const [queueIdx, setQueueIdx] = useState(0);
   const [contas, setContas] = useState<{ id: string; nome: string; tipo: string }[]>([]);
   const [selectedConta, setSelectedConta] = useState<string>("");
   const [detectedConta, setDetectedConta] = useState<string | null>(null);
@@ -244,7 +247,7 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       queryClient.invalidateQueries({ queryKey: ["dividas-future"] });
       queryClient.invalidateQueries({ queryKey: ["dividas-parcelamentos"] });
       toast({ title: `${rows.length} parcelas do empréstimo ${loanDoc.contratoKey} lançadas` });
-      handleClose();
+      irProximo();
     } catch {
       toast({ title: "Erro ao lançar o empréstimo", variant: "destructive" });
     } finally {
@@ -252,20 +255,10 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     }
   };
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-
+  // Carrega e parseia UM arquivo. É chamado pela fila (iniciarFila/irProximo);
+  // a validação de extensão/tamanho fica na entrada da fila.
+  const carregarArquivo = async (f: File) => {
     const ext = f.name.split(".").pop()?.toLowerCase();
-    if (ext !== "csv" && ext !== "ofx" && ext !== "pdf") {
-      toast({ title: "Apenas arquivos .csv, .ofx ou .pdf", variant: "destructive" });
-      return;
-    }
-    if (f.size > 10 * 1024 * 1024) {
-      toast({ title: "Arquivo muito grande (máx 10MB)", variant: "destructive" });
-      return;
-    }
-
     setFile(f);
     setFileType(ext as "csv" | "ofx" | "pdf");
     setResult(null);
@@ -1449,7 +1442,9 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     setForceImporting(false);
   };
 
-  const handleClose = () => {
+  // Zera o estado do arquivo atual SEM fechar o dialog nem mexer na fila.
+  // Usado ao avançar pro próximo arquivo da fila e também pelo handleClose.
+  const limparArquivoAtual = () => {
     setFile(null);
     setFileType(null);
     setResult(null);
@@ -1475,6 +1470,50 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
     setDueConfirmed(false);
     setDateCorrectionItems(null);
     setDateCorrectMode(false);
+  };
+
+  // ── Fila de importação (arrastar vários / conferir um a um) ──────────────
+  const extValida = (f: File) => {
+    const e = f.name.split(".").pop()?.toLowerCase();
+    return e === "csv" || e === "ofx" || e === "pdf";
+  };
+  const iniciarFila = (files: File[]) => {
+    const validos = files.filter((f) => extValida(f) && f.size <= 10 * 1024 * 1024);
+    const ignorados = files.length - validos.length;
+    if (!validos.length) {
+      toast({ title: "Apenas .csv, .ofx ou .pdf (até 10MB)", variant: "destructive" });
+      return;
+    }
+    if (ignorados > 0) toast({ title: `${ignorados} arquivo(s) ignorado(s) (formato ou tamanho)` });
+    limparArquivoAtual();
+    setQueue(validos);
+    setQueueIdx(0);
+    carregarArquivo(validos[0]);
+  };
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    iniciarFila(Array.from(e.target.files || []));
+    e.target.value = ""; // permite re-selecionar os mesmos arquivos depois
+  };
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    iniciarFila(Array.from(e.dataTransfer.files || []));
+  };
+  const temProximo = queueIdx + 1 < queue.length;
+  const irProximo = () => {
+    if (temProximo) {
+      const next = queueIdx + 1;
+      setQueueIdx(next);
+      limparArquivoAtual();
+      carregarArquivo(queue[next]);
+    } else {
+      handleClose();
+    }
+  };
+
+  const handleClose = () => {
+    limparArquivoAtual();
+    setQueue([]);
+    setQueueIdx(0);
     onOpenChange(false);
   };
 
@@ -1488,8 +1527,19 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="sm:max-w-5xl">
           <DialogHeader>
-            <DialogTitle>Importar Extrato</DialogTitle>
-            <DialogDescription>Faça upload do arquivo CSV, OFX ou PDF do seu banco</DialogDescription>
+            <DialogTitle className="flex items-center gap-2">
+              Importar Extrato
+              {queue.length > 1 && (
+                <span className="text-xs font-normal text-muted-foreground">
+                  arquivo {queueIdx + 1} de {queue.length}
+                </span>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {queue.length > 1
+                ? "Confira cada arquivo e confirme — o próximo abre em seguida."
+                : "Arraste um ou vários arquivos (ou clique). CSV, OFX ou PDF."}
+            </DialogDescription>
           </DialogHeader>
 
           {!result ? (
@@ -1557,18 +1607,22 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
                       As {loanDoc.futuras.length} parcelas futuras entram como "Empréstimos" na conta escolhida e aparecem em Dívidas e Projeções. Reimportar atualiza sem duplicar.
                     </p>
                     <div className="flex justify-end gap-2">
-                      <Button variant="ghost" onClick={handleClose}>Cancelar</Button>
+                      <Button variant="ghost" onClick={irProximo}>{temProximo ? "Pular" : "Cancelar"}</Button>
                       <Button onClick={handleLoanImport} disabled={!loanContaId || loanImporting}>
                         {loanImporting ? "Lançando..." : `Lançar ${loanDoc.futuras.length} parcelas`}
                       </Button>
                     </div>
                   </div>
                 ) : !file ? (
-                  <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-8 cursor-pointer hover:border-foreground/30 transition-colors">
+                  <label
+                    onDrop={handleDrop}
+                    onDragOver={(e) => e.preventDefault()}
+                    className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-8 cursor-pointer hover:border-foreground/30 transition-colors"
+                  >
                     <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-                    <span className="text-sm text-muted-foreground">Clique para selecionar um arquivo</span>
-                    <span className="text-xs text-muted-foreground mt-1">.csv, .ofx ou .pdf — Máximo 10MB</span>
-                    <input type="file" accept=".csv,.ofx,.pdf" className="hidden" onChange={handleFileSelect} />
+                    <span className="text-sm text-muted-foreground">Arraste os arquivos aqui ou clique</span>
+                    <span className="text-xs text-muted-foreground mt-1">Vários de uma vez · .csv, .ofx ou .pdf · até 10MB cada</span>
+                    <input type="file" multiple accept=".csv,.ofx,.pdf" className="hidden" onChange={handleFileSelect} />
                   </label>
                 ) : (
                   <>
@@ -1731,18 +1785,41 @@ export function CsvImportDialog({ open, onOpenChange }: Props) {
                           Corrigir datas de importação anterior
                         </Button>
                       )}
+
+                      {temProximo && (
+                        <Button
+                          variant="ghost"
+                          onClick={irProximo}
+                          disabled={importing}
+                          className="w-full text-muted-foreground"
+                        >
+                          Pular este arquivo →
+                        </Button>
+                      )}
                     </div>
                   </>
                 )}
               </div>
             )
           ) : (
-            <ImportReport
-              result={result}
-              onClose={handleClose}
-              onForceImport={handleForceImport}
-              forceImporting={forceImporting}
-            />
+            <div className="space-y-3">
+              <ImportReport
+                result={result}
+                onClose={handleClose}
+                onForceImport={handleForceImport}
+                forceImporting={forceImporting}
+              />
+              {temProximo && (
+                <div className="flex items-center justify-between rounded-lg border bg-secondary/40 px-3 py-2">
+                  <span className="text-sm text-muted-foreground">
+                    Faltam {queue.length - queueIdx - 1} arquivo(s) na fila.
+                  </span>
+                  <Button size="sm" onClick={irProximo}>
+                    Próximo arquivo →
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
         </DialogContent>
       </Dialog>
